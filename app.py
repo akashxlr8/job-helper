@@ -627,35 +627,6 @@ def main():
             st.info("👆 Enter some text to start extracting contact information!")
 
     st.markdown("---")
-    st.markdown("### 💡 Example Input Types:")
-    ec1, ec2 = st.columns(2)
-    with ec1:
-        st.markdown(
-            """
-            **Job Posting Text:**
-            ```
-            Senior Software Engineer - TechCorp
-            Contact: Sarah Johnson, HR Manager
-            Email: sarah.johnson@techcorp.com
-            Phone: (555) 123-4567
-            LinkedIn: linkedin.com/in/sarah-johnson
-            ```
-            """
-        )
-    with ec2:
-        st.markdown(
-            """
-            **Email Signature:**
-            ```
-            Best regards,
-            Mike Rodriguez
-            Senior Recruiter | TechCorp Solutions
-            mike.rodriguez@techcorp.com
-            Direct: +1-555-987-6543
-            LinkedIn: linkedin.com/in/mike-rodriguez
-            ```
-            """
-        )
 
 
 def _load_image_from_paste(pasted: str) -> Image.Image | None:
