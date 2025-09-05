@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import google.generativeai as genai
 from openai import OpenAI
-from dotenv import load_dotenv
+
 import phonenumbers
 from email_validator import validate_email, EmailNotValidError
 from PIL import Image
@@ -16,36 +16,40 @@ import io
 import requests
 from streamlit_paste_button import paste_image_button as pbutton
 from typing import cast
+from database import save_contacts_to_db, get_all_contacts_df
 
-# Load environment variables
-load_dotenv()
+
+
 
 
 class ContactExtractor:
     """Extracts contacts from text or images using patterns and optional LLMs."""
 
     def __init__(self):
+        self.openai_client = None
+        self.gemini_enabled = False
+        # Storage dir
+        self.data_dir = Path("extracted_contacts")
+        self.data_dir.mkdir(exist_ok=True)
+
+    def set_api_keys(self, openai_api_key: str | None, google_api_key: str | None):
         # Initialize OpenAI
         self.openai_client = None
-        if os.getenv("OPENAI_API_KEY"):
-            self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        if openai_api_key:
+            self.openai_client = OpenAI(api_key=openai_api_key)
 
-        # Initialize Gemini config (create model on demand later)
+        # Initialize Gemini config
         self.gemini_enabled = False
-        if os.getenv("GOOGLE_API_KEY"):
+        if google_api_key:
             try:
                 _configure = getattr(genai, "configure", None)
                 if callable(_configure):
-                    _configure(api_key=os.getenv("GOOGLE_API_KEY"))
+                    _configure(api_key=google_api_key)
                     self.gemini_enabled = True
                 else:
                     self.gemini_enabled = False
             except Exception:
                 self.gemini_enabled = False
-
-        # Storage dir
-        self.data_dir = Path("extracted_contacts")
-        self.data_dir.mkdir(exist_ok=True)
 
         # Model defaults and capability sets
         self._default_openai_text = "gpt-4o"
@@ -409,6 +413,14 @@ class ContactExtractor:
             df = pd.DataFrame(results["structured_contacts"])
             csv_path = self.data_dir / f"{filename}.csv"
             df.to_csv(csv_path, index=False)
+        
+        # Save to database
+        try:
+            save_contacts_to_db(results, datetime.now().strftime('%Y%m%d_%H%M%S'), filename)
+            st.success("✅ Results saved to the database.")
+        except Exception as e:
+            st.error(f"Error saving to database: {e}")
+
         return json_path, csv_path
 
 
@@ -421,14 +433,22 @@ def main():
 
     if "extractor" not in st.session_state:
         st.session_state.extractor = ContactExtractor()
+    
+    # Clear any cached image data to prevent media file errors
+    if "uploaded_image" in st.session_state:
+        del st.session_state.uploaded_image
 
     with st.sidebar:
         st.header("⚙️ Configuration")
         st.subheader("AI Keys (Optional)")
-        openai_key = st.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
-        gemini_key = st.text_input("Google Gemini API Key", type="password", value=os.getenv("GOOGLE_API_KEY", ""))
-        st.success("✅ OpenAI API configured" if openai_key else "⚠️ OpenAI API not configured")
-        st.success("✅ Gemini API configured" if gemini_key else "⚠️ Gemini API not configured")
+        st.text_input("OpenAI API Key", type="password", key="openai_api_key")
+        st.text_input("Google Gemini API Key", type="password", key="google_api_key")
+
+        if "extractor" in st.session_state:
+            st.session_state.extractor.set_api_keys(st.session_state.get("openai_api_key"), st.session_state.get("google_api_key"))
+
+        st.success("✅ OpenAI API configured" if st.session_state.get("openai_api_key") else "⚠️ OpenAI API not configured")
+        st.success("✅ Gemini API configured" if st.session_state.get("google_api_key") else "⚠️ Gemini API not configured")
 
         st.markdown("---")
         st.subheader("🧩 Model Selection")
@@ -462,7 +482,7 @@ def main():
         st.header("📝 Input Text")
         input_method = st.radio("Choose input method:", ["Type/Paste Text", "Upload Text File", "Upload Image/Screenshot"])
         text_content = ""
-        uploaded_image: Image.Image | None = None
+        uploaded_image = None
 
         if input_method == "Type/Paste Text":
             text_content = st.text_area(
@@ -487,10 +507,16 @@ def main():
                 img_file = st.file_uploader("Choose an image file", type=["png", "jpg", "jpeg", "bmp", "tiff"]) 
                 if img_file:
                     try:
-                        uploaded_image = Image.open(img_file)
-                        st.image(uploaded_image, caption="Uploaded Image", use_column_width=True)
+                        img = Image.open(img_file)
+                        if img is not None and isinstance(img, Image.Image):
+                            uploaded_image = img
+                            st.image(uploaded_image, caption="Uploaded Image")
+                        else:
+                            st.error("Uploaded file is not a valid image.")
+                            uploaded_image = None
                     except Exception as e:
                         st.error(f"Error loading image: {e}")
+                        uploaded_image = None
             else:
                 pasted_value = st.text_area(
                     "Paste image URL or Base64 data URI (Ctrl+V)",
@@ -501,15 +527,34 @@ def main():
                 )
                 if pasted_value:
                     img = _load_image_from_paste(pasted_value)
-                    if img is not None:
+                    if img is not None and isinstance(img, Image.Image):
                         uploaded_image = img
-                        st.image(uploaded_image, caption="Pasted Image", use_column_width=True)
+                        try:
+                            st.image(uploaded_image, caption="Pasted Image")
+                        except Exception as e:
+                            st.error(f"Error displaying pasted image: {e}")
+                            uploaded_image = None
+                    else:
+                        st.error("Pasted data is not a valid image.")
+                        uploaded_image = None
             if img_method == "Paste from Clipboard":
                 st.markdown("📋 Paste an image from your clipboard")
                 paste_result = pbutton("📋 Paste an image")
                 if paste_result.image_data is not None:
-                    uploaded_image = cast(Image.Image, paste_result.image_data)
-                    st.image(uploaded_image, caption="Pasted Image", use_column_width=True)
+                    st.info("Image data received from clipboard.")
+                    img = paste_result.image_data
+                    if img is not None and isinstance(img, Image.Image):
+                        uploaded_image = img
+                        try:
+                            st.image(uploaded_image, caption="Pasted Image")
+                        except Exception as e:
+                            st.error(f"Error displaying clipboard image: {e}")
+                            uploaded_image = None
+                    else:
+                        st.error("Clipboard data is not a valid image.")
+                        uploaded_image = None
+                else:
+                    st.warning("No image data received from clipboard. Please try again.")
 
             st.markdown("---")
             with st.expander("🔍 Current Extraction Prompt", expanded=False):
@@ -527,10 +572,27 @@ def main():
         st.session_state.extraction_prompt = extraction_prompt
         preset_prompts = {
             "Default": default_prompt,
-            "Job Postings": "Extract job posting text; focus HR contact info, company, department, how to apply.",
-            "LinkedIn Profiles": "Extract profile text; focus name, title, company, contact links.",
-            "Email Signatures": "Extract signature; focus name, title, company, email, phones, address, links.",
-            "Business Cards": "Extract all fields; preserve formatting when possible.",
+            "Job Postings": (
+                "Extract the job posting text. Focus on: job title, company, location, department, "
+                "application instructions, and HR/recruiter contact details (name, title, email, phone). "
+                "Example: 'Senior Software Engineer — TechCorp; Contact: Sarah Johnson, HR Manager; "
+                "Email: sarah.johnson@techcorp.com; Apply at careers@techcorp.com.' Return structured fields."
+            ),
+            "LinkedIn Profiles": (
+                "Extract profile content. Focus on: full name, current title, current company, previous roles, "
+                "location, and any contact links (email, website, LinkedIn URL). "
+                "Example: 'John Doe — Software Engineer at Acme Inc. | linkedin.com/in/johndoe | johndoe@gmail.com'."
+            ),
+            "Email Signatures": (
+                "Extract signature blocks. Focus on: sender name, job title, company, direct phone, mobile, "
+                "email address, office address, and social/profile links. Preserve labels (Direct:, Mobile:, Office:). "
+                "Example: 'Best,\nJane Smith\nRecruiter | Acme Corp\njane@acme.com\nDirect: +1-555-000-1111'."
+            ),
+            "Business Cards": (
+                "Extract all visible fields from a business card. Focus on: name, title, company, email, phone(s), "
+                "website, address, and any social handles. Preserve formatting where possible. "
+                "Example: 'Maria Lopez | Product Manager | example.com | maria@example.com | +44 20 7946 0958'."
+            ),
         }
         selected_preset = st.selectbox("Or choose a preset:", ["Custom"] + list(preset_prompts.keys()))
         if selected_preset != "Custom":
@@ -586,11 +648,13 @@ def main():
 
     with col2:
         st.header("📊 Extraction Results")
+        
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Structured Contacts", "🔍 Pattern Analysis", "📝 Raw Text", "🤖 AI Results", "🗃️ Database"])
+
         if "current_results" in st.session_state:
             results = st.session_state.current_results
             timestamp = st.session_state.current_timestamp
             st.subheader(f"Results from: {timestamp}")
-            tab1, tab2, tab3, tab4 = st.tabs(["📋 Structured Contacts", "🔍 Pattern Analysis", "📝 Raw Text", "🤖 AI Results"])
             with tab1:
                 if results.get("structured_contacts"):
                     df = pd.DataFrame(results["structured_contacts"])
@@ -624,6 +688,18 @@ def main():
                 st.dataframe(df, use_container_width=True)
         else:
             st.info("👆 Enter some text to start extracting contact information!")
+
+        with tab5:
+            st.header("🗃️ All Contacts in Database")
+            try:
+                all_contacts_df = get_all_contacts_df()
+                if not all_contacts_df.empty:
+                    st.dataframe(all_contacts_df, use_container_width=True)
+                    st.download_button("📥 Download All as CSV", all_contacts_df.to_csv(index=False), file_name="all_contacts.csv", mime="text/csv")
+                else:
+                    st.info("No contacts found in the database.")
+            except Exception as e:
+                st.error(f"Error loading contacts from database: {e}")
 
     st.markdown("---")
 
