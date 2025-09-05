@@ -1,0 +1,42 @@
+{
+  "raw_text": "Here's the extracted contact information:\n\n- Name: Rachith Rao\n- Job Title: Operations Management\n- Company: Zen\n- Emails: adit@zensciences.com, careers@zensciences.com",
+  "contact_patterns": {
+    "emails": [
+      "adit@zensciences.com",
+      "careers@zensciences.com"
+    ],
+    "phones": [],
+    "names": [],
+    "titles": [],
+    "companies": [
+      "zensciences"
+    ],
+    "linkedin": [],
+    "other_social": []
+  },
+  "llm_enhanced": [],
+  "structured_contacts": [
+    {
+      "name": "",
+      "title": "",
+      "company": "zensciences",
+      "email": "adit@zensciences.com",
+      "phone": "",
+      "linkedin": "",
+      "source": "Pattern Matching",
+      "confidence": "low",
+      "notes": "Additional contact info found"
+    },
+    {
+      "name": "",
+      "title": "",
+      "company": "zensciences",
+      "email": "careers@zensciences.com",
+      "phone": "",
+      "linkedin": "",
+      "source": "Pattern Matching",
+      "confidence": "low",
+      "notes": "Additional contact info found"
+    }
+  ]
+}

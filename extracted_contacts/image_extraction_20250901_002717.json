@@ -1,0 +1,33 @@
+{
+  "raw_text": "Sure, here is the extracted text:\n\n---\n\nKavita Jain reposted this\n\nShalini Mohan \ud83d\udc69\ud83c\udffb\u200d\ud83d\udcbb 1st  \nSenior Recruiter @ Intuit I Ex- Microsoft I Ex- Swiggy  \n2w \u00b7 Edited \u00b7 \ud83c\udf0e\n\nExciting Opportunities at Intuit - Bangalore! \ud83d\ude80\n\nJoin our dynamic tech teams at Intuit! We are seeking talented individuals for the following roles:\n\n- Software Engineer II: Java with exposure to Golang, Springboot, Microservices, CI/CD, and AWS/Azure/GCP.  \n- Senior Software Engineer: Proficient in Java and React.  \n- Salesforce Developer (4-6Yrs)  \n- Senior Software Engineer: Java with AWS and data background.  \n- Senior Software Engineer: Java+React with AWS cloud and Data Engineering.  \n- Senior Software Engineer: Python + Java, Springboot, Microservices, CI/CD, AWS/Azure/GCP.  \n\nIf you have the relevant hands-on experience for any of the above positions and are interested in exploring these opportunities, we'd love to hear from you!\n\nSend your updated profile to shalini_mohan@intuit.com.\n\n#Intuit #TechJobs #Bangalore #SSE #SoftwareEngineer #SeniorSoftwareEngineer #Java #React #Salesforce #Fullstack #Backend #Hiring #Hybrid #python #AWS #cloud\n\n\ud83d\udc65\ud83e\udd1d Ridam Hazra and 654 others \n\n68 comments \u00b7 16 reposts",
+  "contact_patterns": {
+    "emails": [
+      "shalini_mohan@intuit.com"
+    ],
+    "phones": [],
+    "names": [
+      "at Intuit"
+    ],
+    "titles": [
+      "Recruiter"
+    ],
+    "companies": [
+      "intuit"
+    ],
+    "linkedin": [],
+    "other_social": []
+  },
+  "llm_enhanced": [],
+  "structured_contacts": [
+    {
+      "name": "at Intuit",
+      "title": "Recruiter",
+      "company": "intuit",
+      "email": "shalini_mohan@intuit.com",
+      "phone": "",
+      "linkedin": "",
+      "source": "Pattern Matching",
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "raw_text": "**Contact Information:**\n\n- **Name:** Shalini Mohan\n- **Job Title:** Senior Recruiter\n- **Company:** Intuit\n- **Email:** shalini_mohan@intuit.com\n\n**Previous Companies:**\n- Microsoft\n- Swiggy\n\n**Opportunities Available:**\n\n- Software Engineer II\n- Senior Software Engineer\n- Salesforce Developer\n- Senior Software Engineer with AWS and Data background",
+  "contact_patterns": {
+    "emails": [
+      "shalini_mohan@intuit.com"
+    ],
+    "phones": [],
+    "names": [],
+    "titles": [
+      "Recruiter"
+    ],
+    "companies": [
+      "intuit"
+    ],
+    "linkedin": [],
+    "other_social": []
+  },
+  "llm_enhanced": [],
+  "structured_contacts": [
+    {
+      "name": "",
+      "title": "Recruiter",
+      "company": "intuit",
+      "email": "shalini_mohan@intuit.com",
+      "phone": "",
+      "linkedin": "",
+      "source": "Pattern Matching",
+      "confidence": "low",
+      "notes": "Additional contact info found"
+    }
+  ]
+}

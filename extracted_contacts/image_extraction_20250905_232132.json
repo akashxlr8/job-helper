@@ -1,0 +1,32 @@
+{
+  "raw_text": "- Name: Bhavjeet Singh\n- LinkedIn Profile: linkedin.com/in/bhavjeet\n- Email: bhavjeet.singh@zomato.com\n- Connected: Aug 30, 2025",
+  "contact_patterns": {
+    "emails": [
+      "bhavjeet.singh@zomato.com"
+    ],
+    "phones": [],
+    "names": [],
+    "titles": [],
+    "companies": [
+      "zomato"
+    ],
+    "linkedin": [
+      "linkedin.com/in/bhavjeet"
+    ],
+    "other_social": []
+  },
+  "llm_enhanced": [],
+  "structured_contacts": [
+    {
+      "name": "",
+      "title": "",
+      "company": "zomato",
+      "email": "bhavjeet.singh@zomato.com",
+      "phone": "",
+      "linkedin": "linkedin.com/in/bhavjeet",
+      "source": "Pattern Matching",
+      "confidence": "low",
+      "notes": "Additional contact info found"
+    }
+  ]
+}
