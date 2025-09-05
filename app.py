@@ -446,30 +446,7 @@ def main():
         )
 
         st.markdown("---")
-        st.subheader("🖼️ Image Extraction Settings")
-        default_prompt = (
-            "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
-        )
-        extraction_prompt = st.text_area(
-            "Image Extraction Prompt:",
-            value=st.session_state.get("extraction_prompt", default_prompt),
-            height=120,
-        )
-        st.session_state.extraction_prompt = extraction_prompt
-        preset_prompts = {
-            "Default": default_prompt,
-            "Job Postings": "Extract job posting text; focus HR contact info, company, department, how to apply.",
-            "LinkedIn Profiles": "Extract profile text; focus name, title, company, contact links.",
-            "Email Signatures": "Extract signature; focus name, title, company, email, phones, address, links.",
-            "Business Cards": "Extract all fields; preserve formatting when possible.",
-        }
-        selected_preset = st.selectbox("Or choose a preset:", ["Custom"] + list(preset_prompts.keys()))
-        if selected_preset != "Custom":
-            st.session_state.extraction_prompt = preset_prompts[selected_preset]
-            st.rerun()
-
-        st.markdown("---")
-        st.subheader("📁 Previous Extractions")
+        st.subheader(" Previous Extractions")
         data_dir = Path("extracted_contacts")
         if data_dir.exists():
             json_files = list(data_dir.glob("*.json"))
@@ -537,6 +514,28 @@ def main():
             st.markdown("---")
             with st.expander("🔍 Current Extraction Prompt", expanded=False):
                 st.text_area("AI will use this prompt:", value=st.session_state.get("extraction_prompt", ""), height=100, disabled=True)
+
+        st.subheader("🖼️ Image Extraction Settings")
+        default_prompt = (
+            "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
+        )
+        extraction_prompt = st.text_area(
+            "Image Extraction Prompt:",
+            value=st.session_state.get("extraction_prompt", default_prompt),
+            height=120,
+        )
+        st.session_state.extraction_prompt = extraction_prompt
+        preset_prompts = {
+            "Default": default_prompt,
+            "Job Postings": "Extract job posting text; focus HR contact info, company, department, how to apply.",
+            "LinkedIn Profiles": "Extract profile text; focus name, title, company, contact links.",
+            "Email Signatures": "Extract signature; focus name, title, company, email, phones, address, links.",
+            "Business Cards": "Extract all fields; preserve formatting when possible.",
+        }
+        selected_preset = st.selectbox("Or choose a preset:", ["Custom"] + list(preset_prompts.keys()))
+        if selected_preset != "Custom":
+            st.session_state.extraction_prompt = preset_prompts[selected_preset]
+            st.rerun()
 
         st.markdown("---")
         c1, c2 = st.columns(2)
