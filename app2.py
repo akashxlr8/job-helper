@@ -166,21 +166,14 @@ class ContactExtractor:
         prompt = f"""
         You are an expert at extracting contact information from job-related text and images.
 
-        CRITICAL INSTRUCTIONS:
-        1. Your response MUST be ONLY a valid JSON object
-        2. Do NOT include any markdown code blocks (```json or ```)
-        3. Do NOT include any explanatory text before or after the JSON
-        4. Do NOT include any comments in the JSON
-        5. Start your response immediately with {{ and end with }}
-
-        JSON SCHEMA (return exactly this structure):
+        Extract contact information and return it as a JSON object with this exact structure:
         {{
             "contacts": [{{"name": "", "title": "", "company": "", "email": "", "phone": "", "linkedin": "", "department": "", "confidence": "high/medium/low", "notes": ""}}],
             "general_info": {{"company": "", "department": "", "job_posting_title": "", "location": ""}},
             "refinements": {{"additional_contacts_found": "0", "corrections_made": ""}}
         }}
 
-        ORIGINAL TEXT TO ANALYZE:
+        TEXT TO ANALYZE:
         {{text}}
         """
 
@@ -209,14 +202,28 @@ class ContactExtractor:
                 content = resp.choices[0].message.content or ""
                 logger.info(f"OpenAI response: {content}")
                 
-                # Clean up the content - remove code blocks and strip whitespace
+                # Clean up the content - remove code blocks, instructions, and strip whitespace
                 cleaned_content = content.strip()
+                
+                # Remove any instruction text that might have been included
+                instruction_patterns = [
+                    r"Extract contact information and return it as a JSON object",
+                    r"TEXT TO ANALYZE",
+                ]
+                for pattern in instruction_patterns:
+                    cleaned_content = re.sub(pattern, "", cleaned_content, flags=re.IGNORECASE)
+                
+                # Remove markdown code blocks
                 if cleaned_content.startswith("```json"):
                     cleaned_content = cleaned_content[7:]
                 if cleaned_content.startswith("```"):
                     cleaned_content = cleaned_content[3:]
                 if cleaned_content.endswith("```"):
                     cleaned_content = cleaned_content[:-3]
+                cleaned_content = cleaned_content.strip()
+                
+                # Remove any remaining instruction-like text
+                cleaned_content = re.sub(r"^\s*[\w\s,.:;-]*?(?=\{)", "", cleaned_content, flags=re.MULTILINE)
                 cleaned_content = cleaned_content.strip()
                 
                 try:
@@ -347,6 +354,76 @@ class ContactExtractor:
             st.error(f"Error extracting text from image with Gemini: {e}")
             return None
 
+    def _is_structured_contact_text(self, text: str) -> bool:
+        """Check if text appears to be structured contact information rather than raw text"""
+        logger.debug(f"Checking structured text detection on: {text[:300]}...")
+        
+        # Look for common structured contact patterns from image extraction
+        structured_indicators = [
+            r"\*\*Contact Information:\*\*",  # **Contact Information:**
+            r"- \*\*Name:\*\*",  # - **Name:**
+            r"- \*\*Job Title:\*\*",  # - **Job Title:**
+            r"- \*\*Company:\*\*",  # - **Company:**
+            r"- \*\*Email:\*\*",  # - **Email:**
+            r"\*\*Name:\*\*",  # **Name:**
+            r"\*\*Job Title:\*\*",  # **Job Title:**
+            r"\*\*Company:\*\*",  # **Company:**
+            r"\*\*Email:\*\*",  # **Email:**
+            r"Name:\s*[A-Za-z]",  # Name: followed by letters
+            r"Job Title:\s*[A-Za-z]",  # Job Title: followed by letters
+            r"Company:\s*[A-Za-z]",  # Company: followed by letters
+            r"Email:\s*[a-zA-Z0-9]",  # Email: followed by alphanumeric
+        ]
+        
+        # Count how many structured indicators are present
+        indicator_count = 0
+        for pattern in structured_indicators:
+            if re.search(pattern, text, re.IGNORECASE):
+                indicator_count += 1
+                logger.debug(f"Pattern matched: {pattern}")
+        
+        # Also check if it looks like a contact card format
+        contact_card_patterns = [
+            r"^[A-Za-z\s]+\n[A-Za-z\s&\-\.]+\n[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",  # Name\nTitle\nEmail
+            r"Contact.*:\s*[A-Za-z]",  # "Contact: Name"
+        ]
+        
+        card_count = sum(1 for pattern in contact_card_patterns if re.search(pattern, text, re.MULTILINE | re.IGNORECASE))
+        
+        logger.debug(f"Structured indicators found: {indicator_count}, card patterns: {card_count}")
+        
+        # If we have multiple structured indicators or contact card patterns, it's likely structured
+        return indicator_count >= 2 or card_count >= 1
+
+    def _parse_structured_contact_text(self, text: str) -> list[dict]:
+        """Parse structured contact text into contact dictionaries"""
+        contacts = []
+        
+        # Extract fields using regex
+        name_match = re.search(r"(?:\*\*)?Name:(?:\*\*)?\s*([^\n\r]+)", text, re.IGNORECASE)
+        title_match = re.search(r"(?:\*\*)?Job Title:(?:\*\*)?\s*([^\n\r]+)", text, re.IGNORECASE)
+        company_match = re.search(r"(?:\*\*)?Company:(?:\*\*)?\s*([^\n\r]+)", text, re.IGNORECASE)
+        email_match = re.search(r"(?:\*\*)?Email:(?:\*\*)?\s*([^\n\r]+)", text, re.IGNORECASE)
+        
+        if name_match or email_match or title_match or company_match:
+            contact = {
+                "name": name_match.group(1).strip() if name_match else "",
+                "title": title_match.group(1).strip() if title_match else "",
+                "company": company_match.group(1).strip() if company_match else "",
+                "email": email_match.group(1).strip() if email_match else "",
+                "phone": "",
+                "linkedin": "",
+                "department": "",
+                "confidence": "high",
+                "notes": "Direct parsing from image extraction",
+                "source": "AI Image Extraction"
+            }
+            # Only add if we have at least one meaningful field
+            if any([contact["name"], contact["email"], contact["title"], contact["company"]]):
+                contacts.append(contact)
+        
+        return contacts
+
     # -------------------- Pipelines --------------------
     def process_text(self, text: str, mode: str = "ai", ai_service: str = "openai", openai_model: str | None = None, gemini_model: str | None = None) -> dict:
         """Process raw text and return structured extraction results.
@@ -406,6 +483,23 @@ class ContactExtractor:
             return None
         
         logger.info(f"Successfully extracted {len(extracted_text)} characters from image")
+        
+        # Check if the extracted text already contains structured contact information
+        is_structured = self._is_structured_contact_text(extracted_text)
+        logger.info(f"Checking if extracted text is structured: {is_structured}")
+        logger.debug(f"Extracted text preview: {extracted_text[:200]}...")
+        if is_structured:
+            logger.info("Extracted text appears to be structured contact information, parsing directly")
+            structured_contacts = self._parse_structured_contact_text(extracted_text)
+            if structured_contacts:
+                all_results = {
+                    "raw_text": extracted_text,
+                    "llm_enhanced": [("direct_parse", {"contacts": structured_contacts, "general_info": {}, "refinements": {"additional_contacts_found": str(len(structured_contacts)), "corrections_made": "Direct parsing from image extraction"}})],
+                    "structured_contacts": structured_contacts,
+                    "extraction_mode": mode,
+                }
+                return all_results
+        
         return self.process_text(extracted_text, mode=mode, ai_service=ai_service, openai_model=openai_model, gemini_model=gemini_model)
 
     # -------------------- Structuring and saving --------------------
