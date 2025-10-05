@@ -5,11 +5,14 @@ import json
 from datetime import datetime
 import os
 from pathlib import Path
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
 from openai import OpenAI
 
-import phonenumbers
-from email_validator import validate_email, EmailNotValidError
 from PIL import Image
 import base64
 import io
@@ -30,7 +33,7 @@ logger.add(lambda msg: print(msg, end=""), level="WARNING")
 
 
 class ContactExtractor:
-    """Extracts contacts from text or images using patterns and optional LLMs."""
+    """Extracts contacts from text or images using LLMs only."""
 
     def __init__(self):
         self.openai_client = None
@@ -51,7 +54,7 @@ class ContactExtractor:
 
         # Initialize Gemini config
         self.gemini_enabled = False
-        if google_api_key:
+        if google_api_key and GENAI_AVAILABLE:
             try:
                 logger.info("Configuring Gemini API")
                 _configure = getattr(genai, "configure", None)
@@ -65,6 +68,8 @@ class ContactExtractor:
             except Exception as e:
                 self.gemini_enabled = False
                 logger.error(f"Failed to configure Gemini API: {e}")
+        elif google_api_key and not GENAI_AVAILABLE:
+            logger.warning("Google API key provided but google.generativeai package not available")
         else:
             logger.warning("No Google API key provided")
 
@@ -106,124 +111,74 @@ class ContactExtractor:
             return requested if requested in self._gemini_vision_models else self._default_gemini_vision
         return requested if requested in self._gemini_text_models else self._default_gemini_text
 
-    # -------------------- Pattern extraction --------------------
-    def extract_contact_patterns(self, text: str) -> dict:
-        contacts = {
-            "emails": [],
-            "phones": [],
-            "names": [],
-            "titles": [],
-            "companies": [],
-            "linkedin": [],
-            "other_social": [],
-        }
 
-        # Emails
-        email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
-        for email in re.findall(email_pattern, text, re.IGNORECASE):
-            try:
-                validated = validate_email(email)
-                contacts["emails"].append(validated.email)
-            except EmailNotValidError:
-                pass
-
-        # Phones
-        phone_patterns = [
-            r"\+?1?[-.\s]?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})",
-            r"\+?(\d{1,3})[-.\s]?(\d{3,4})[-.\s]?(\d{3,4})[-.\s]?(\d{3,4})",
-            r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b",
-            r"\+\d{10,15}",
-        ]
-        for pattern in phone_patterns:
-            for phone in re.findall(pattern, text):
-                try:
-                    phone_str = "".join(phone) if isinstance(phone, tuple) else phone
-                    parsed = phonenumbers.parse(phone_str, "US")
-                    if phonenumbers.is_valid_number(parsed):
-                        formatted = phonenumbers.format_number(
-                            parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                        )
-                        contacts["phones"].append(formatted)
-                except Exception:
-                    clean = re.sub(r"[^\d+]", "", "".join(phone) if isinstance(phone, tuple) else phone)
-                    if len(clean) >= 10:
-                        contacts["phones"].append(clean)
-
-        # Names
-        name_patterns = [
-            r"(?:Mr\.?|Ms\.?|Mrs\.?|Dr\.?|Prof\.?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-            r"\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b(?=\s*(?:HR|Human Resources|Recruiter|Manager|Director|VP|CEO|CTO|Lead))",
-            r"Contact:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-            r"From:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-        ]
-        for pattern in name_patterns:
-            contacts["names"].extend(re.findall(pattern, text, re.IGNORECASE))
-
-        # Titles
-        title_patterns = [
-            r"\b(?:HR\s+)?(?:Manager|Director|Lead|Coordinator|Specialist|Representative|Recruiter|Officer)\b",
-            r"\b(?:Human\s+Resources?|Talent\s+Acquisition|People\s+Operations?)\b",
-            r"\b(?:CEO|CTO|VP|President|Head\s+of)\b",
-        ]
-        for pattern in title_patterns:
-            contacts["titles"].extend(re.findall(pattern, text, re.IGNORECASE))
-
-        # LinkedIn
-        linkedin_pattern = r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9-]+"
-        contacts["linkedin"].extend(re.findall(linkedin_pattern, text, re.IGNORECASE))
-
-        # Companies
-        company_patterns = [
-            r"([A-Z][A-Za-z\s&]+)(?:\s+(?:Inc\.?|LLC|Corp\.?|Ltd\.?|Company|Solutions?|Technologies?))",
-            r"@([A-Za-z\s&]+)\.com",
-        ]
-        for pattern in company_patterns:
-            contacts["companies"].extend(re.findall(pattern, text))
-
-        # Deduplicate and clean
-        for k, vals in contacts.items():
-            dedup = []
-            seen = set()
-            for v in vals:
-                v2 = v.strip()
-                if v2 and v2 not in seen:
-                    dedup.append(v2)
-                    seen.add(v2)
-            contacts[k] = dedup
-        return contacts
+    def _create_fallback_json_from_text(self, ai_response: str, original_text: str) -> dict | None:
+        """Create a basic JSON structure when AI response can't be parsed"""
+        try:
+            # Try to extract basic contact info from the AI response text
+            fallback_contacts = []
+            
+            # Look for common patterns in the AI response
+            name_match = re.search(r"(?:Name|name):\s*([^\n\r]+)", ai_response)
+            title_match = re.search(r"(?:Job Title|Title|title|Position):\s*([^\n\r]+)", ai_response)
+            company_match = re.search(r"(?:Company|company|Organization):\s*([^\n\r]+)", ai_response)
+            email_match = re.search(r"(?:Email|email):\s*([^\s\n\r]+@[^\s\n\r]+)", ai_response)
+            
+            if name_match or email_match or title_match or company_match:
+                contact = {
+                    "name": name_match.group(1).strip() if name_match else "",
+                    "title": title_match.group(1).strip() if title_match else "",
+                    "company": company_match.group(1).strip() if company_match else "",
+                    "email": email_match.group(1).strip() if email_match else "",
+                    "phone": "",
+                    "linkedin": "",
+                    "department": "",
+                    "confidence": "medium",
+                    "notes": "Extracted from AI response text (fallback parsing)"
+                }
+                # Only add if we have at least one meaningful field
+                if any([contact["name"], contact["email"], contact["title"], contact["company"]]):
+                    fallback_contacts.append(contact)
+            
+            if fallback_contacts:
+                return {
+                    "contacts": fallback_contacts,
+                    "general_info": {
+                        "company": fallback_contacts[0]["company"] if fallback_contacts else "",
+                        "department": "",
+                        "job_posting_title": "",
+                        "location": ""
+                    },
+                    "refinements": {
+                        "additional_contacts_found": str(len(fallback_contacts)),
+                        "corrections_made": "Fallback parsing due to AI JSON parse error"
+                    }
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Fallback JSON creation failed: {e}")
+            return None
 
     # -------------------- LLM enhancement --------------------
-    def enhance_with_llm(self, text: str, pattern_results: dict | None = None,
-                         provider_preference: str | None = None,
+    def enhance_with_llm(self, text: str, provider_preference: str | None = None,
                          openai_model: str | None = None,
                          gemini_model: str | None = None) -> list[tuple[str, dict]]:
-        # Pattern summary for the prompt
-        pattern_summary = ""
-        if pattern_results:
-            pattern_summary = f"""
-        PATTERN-BASED EXTRACTION RESULTS (for reference):
-        - Emails found: {', '.join(pattern_results.get('emails', [])) or 'None'}
-        - Phone numbers found: {', '.join(pattern_results.get('phones', [])) or 'None'}
-        - Names found: {', '.join(pattern_results.get('names', [])) or 'None'}
-        - Job titles found: {', '.join(pattern_results.get('titles', [])) or 'None'}
-        - Companies found: {', '.join(pattern_results.get('companies', [])) or 'None'}
-        - LinkedIn profiles found: {', '.join(pattern_results.get('linkedin', [])) or 'None'}
-        """
-
         prompt = f"""
-        You are an expert at extracting and REFINING contact information from job-related text and images.
-        Review pattern-based results, then refine using the original text.
+        You are an expert at extracting contact information from job-related text and images.
 
-        IMPORTANT: Your entire response MUST be a single valid JSON object matching the schema below. Do NOT include markdown, explanations, or any text outside the JSON block. Do NOT wrap the JSON in code fences.
+        CRITICAL INSTRUCTIONS:
+        1. Your response MUST be ONLY a valid JSON object
+        2. Do NOT include any markdown code blocks (```json or ```)
+        3. Do NOT include any explanatory text before or after the JSON
+        4. Do NOT include any comments in the JSON
+        5. Start your response immediately with {{ and end with }}
 
-        Return ONLY JSON with this structure:
+        JSON SCHEMA (return exactly this structure):
         {{
             "contacts": [{{"name": "", "title": "", "company": "", "email": "", "phone": "", "linkedin": "", "department": "", "confidence": "high/medium/low", "notes": ""}}],
             "general_info": {{"company": "", "department": "", "job_posting_title": "", "location": ""}},
-            "refinements": {{"pattern_accuracy": "high/medium/low", "additional_contacts_found": "0", "corrections_made": ""}}
+            "refinements": {{"additional_contacts_found": "0", "corrections_made": ""}}
         }}
-
-        {pattern_summary}
 
         ORIGINAL TEXT TO ANALYZE:
         {{text}}
@@ -240,30 +195,62 @@ class ContactExtractor:
                 client = self.openai_client
                 if client is None:
                     raise RuntimeError("OpenAI client not initialized")
-                logger.info(f"OpenAI request: model={model_name}, prompt={prompt}")
+                
+                formatted_prompt = prompt.format(text=text)
+                logger.info(f"OpenAI request: model={model_name}, prompt length={len(formatted_prompt)}")
+                logger.debug(f"OpenAI formatted prompt: {formatted_prompt}")
+                
                 resp = client.chat.completions.create(
                     model=model_name,
-                    messages=[{"role": "user", "content": prompt.format(text=text)}],
+                    messages=[{"role": "user", "content": formatted_prompt}],
                     max_tokens=8000,
                     temperature=0.1,
                 )
                 content = resp.choices[0].message.content or ""
                 logger.info(f"OpenAI response: {content}")
+                
+                # Clean up the content - remove code blocks and strip whitespace
+                cleaned_content = content.strip()
+                if cleaned_content.startswith("```json"):
+                    cleaned_content = cleaned_content[7:]
+                if cleaned_content.startswith("```"):
+                    cleaned_content = cleaned_content[3:]
+                if cleaned_content.endswith("```"):
+                    cleaned_content = cleaned_content[:-3]
+                cleaned_content = cleaned_content.strip()
+                
                 try:
-                    data = json.loads(content)
+                    data = json.loads(cleaned_content)
                 except json.JSONDecodeError as e:
-                    logger.error(f"OpenAI response not valid JSON: {content}")
-                    m = re.search(r"\{[\s\S]*\}", content)
+                    logger.error(f"OpenAI JSON parse error: {e}")
+                    logger.error(f"OpenAI response content: {repr(content)}")
+                    
+                    # Try to extract JSON using regex
+                    m = re.search(r"\{[\s\S]*\}", cleaned_content)
                     if m:
                         try:
-                            data = json.loads(m.group())
+                            potential_json = m.group().strip()
+                            data = json.loads(potential_json)
+                            logger.info(f"Successfully parsed JSON using regex fallback")
                         except Exception as e2:
                             logger.error(f"OpenAI fallback JSON parse failed: {e2}")
-                            st.warning(f"OpenAI API error: Could not parse response as JSON. See logs for details.")
-                            data = None
+                            logger.error(f"Attempted JSON: {repr(potential_json if 'm' in locals() else 'None')}")
+                            
+                            # Create basic fallback JSON from the original response
+                            data = self._create_fallback_json_from_text(content, text)
+                            if data:
+                                logger.info(f"Created fallback JSON structure from response text")
+                            else:
+                                st.warning(f"OpenAI API error: Could not parse response as JSON. See logs for details.")
                     else:
-                        st.warning(f"OpenAI API error: Could not find JSON in response. See logs for details.")
-                        data = None
+                        logger.error(f"No JSON structure found in response")
+                        
+                        # Create basic fallback JSON from the original response  
+                        data = self._create_fallback_json_from_text(content, text)
+                        if data:
+                            logger.info(f"Created fallback JSON structure from response text")
+                        else:
+                            st.warning(f"OpenAI API error: Could not find JSON in response. See logs for details.")
                 if data:
                     results.append((model_name, data))
             except Exception as e:
@@ -276,7 +263,7 @@ class ContactExtractor:
                 gm = self._select_gemini_model(gemini_model, "text")
                 logger.info(f"Gemini request: model={gm}, prompt={prompt}")
                 try:
-                    _GM = getattr(genai, "GenerativeModel", None)
+                    _GM = getattr(genai, "GenerativeModel", None) if GENAI_AVAILABLE else None
                     if _GM is None:
                         raise RuntimeError("Gemini GenerativeModel not available in this package version")
                     runtime = _GM(gm)
@@ -345,7 +332,7 @@ class ContactExtractor:
         try:
             logger.info(f"Gemini Vision request: model={model}, prompt={custom_prompt}")
             try:
-                _GM = getattr(genai, "GenerativeModel", None)
+                _GM = getattr(genai, "GenerativeModel", None) if GENAI_AVAILABLE else None
                 if _GM is None:
                     raise RuntimeError("Gemini GenerativeModel not available in this package version")
                 runtime = _GM(self._select_gemini_model(model, "vision"))
@@ -361,21 +348,17 @@ class ContactExtractor:
             return None
 
     # -------------------- Pipelines --------------------
-    def process_text(self, text: str, mode: str = "pattern",
-                     ai_service: str | None = None,
-                     openai_model: str | None = None,
-                     gemini_model: str | None = None) -> dict:
+    def process_text(self, text: str, mode: str = "ai", ai_service: str = "openai", openai_model: str | None = None, gemini_model: str | None = None) -> dict:
         """Process raw text and return structured extraction results.
 
         Args:
             text: input text to process
-            mode: "pattern" for pattern matching only, "ai" for AI-only extraction
+            mode: "ai" for AI-only extraction
             ai_service/openai_model/gemini_model: AI service selection
         """
         logger.info(f"Starting text processing with mode={mode}, ai_service={ai_service}")
         all_results = {
             "raw_text": text,
-            "contact_patterns": {},
             "llm_enhanced": [],
             "structured_contacts": [],
             "extraction_mode": mode,
@@ -385,21 +368,15 @@ class ContactExtractor:
             # AI-Only mode: skip pattern matching, use only LLM
             logger.info("AI-only mode: calling LLM for extraction")
             if text.strip():
-                llm = self.enhance_with_llm(text, None, provider_preference=ai_service, openai_model=openai_model, gemini_model=gemini_model)
+                llm = self.enhance_with_llm(text, provider_preference=ai_service, openai_model=openai_model, gemini_model=gemini_model)
                 all_results["llm_enhanced"] = llm
                 logger.info(f"LLM returned {len(llm)} result(s)")
-        else:
-            # Pattern Matching mode: use regex patterns only
-            logger.info("Pattern matching mode: using regex extraction")
-            patterns = self.extract_contact_patterns(text)
-            all_results["contact_patterns"] = patterns
-            logger.info(f"Pattern matching found: {len(patterns.get('emails', []))} emails, {len(patterns.get('phones', []))} phones, {len(patterns.get('names', []))} names")
 
         all_results["structured_contacts"] = self.structure_final_results(all_results)
         logger.info(f"Structured {len(all_results['structured_contacts'])} contact(s)")
         return all_results
 
-    def process_image(self, image: Image.Image, mode: str = "pattern", ai_service: str = "openai",
+    def process_image(self, image: Image.Image, mode: str = "ai", ai_service: str = "openai",
                       custom_prompt: str | None = None,
                       openai_model: str | None = None,
                       gemini_model: str | None = None) -> dict | None:
@@ -407,7 +384,7 @@ class ContactExtractor:
         
         Args:
             image: PIL Image to process
-            mode: "pattern" for pattern matching, "ai" for AI-only extraction
+            mode: "ai" for AI-only extraction
             ai_service: which AI service to use for image text extraction
             custom_prompt: optional custom prompt for image extraction
             openai_model/gemini_model: model selection
@@ -445,44 +422,7 @@ class ContactExtractor:
                 c["confidence"] = c.get("confidence", "medium")
                 c["ai_refinements"] = llm_result.get("refinements", {})
                 structured.append(c)
-        if structured:
-            return structured
-
-        # Fallback: build from patterns
-        p = all_results.get("contact_patterns", {})
-        names = p.get("names", [])
-        emails = p.get("emails", [])
-        phones = p.get("phones", [])
-        titles = p.get("titles", [])
-        companies = p.get("companies", [])
-        linkedin = p.get("linkedin", [])
-
-        for i, name in enumerate(names):
-            structured.append({
-                "name": name,
-                "title": titles[i] if i < len(titles) else "",
-                "company": companies[0] if companies else "",
-                "email": emails[i] if i < len(emails) else "",
-                "phone": phones[i] if i < len(phones) else "",
-                "linkedin": linkedin[i] if i < len(linkedin) else "",
-                "source": "Pattern Matching",
-                "confidence": "low",
-                "notes": "",
-            })
-        max_items = max(len(emails), len(phones), len(linkedin), 0)
-        for i in range(max_items):
-            if i >= len(names):
-                structured.append({
-                    "name": "",
-                    "title": titles[i] if i < len(titles) else "",
-                    "company": companies[0] if companies else "",
-                    "email": emails[i] if i < len(emails) else "",
-                    "phone": phones[i] if i < len(phones) else "",
-                    "linkedin": linkedin[i] if i < len(linkedin) else "",
-                    "source": "Pattern Matching",
-                    "confidence": "low",
-                    "notes": "Additional contact info found",
-                })
+        return structured
         return structured
 
     def save_results(self, results: dict, filename: str | None = None):
@@ -695,15 +635,8 @@ def main():
 
         st.markdown("---")
         st.subheader("🎯 Extraction Mode")
-        extraction_mode = st.radio(
-            "Choose extraction method:",
-            options=["Pattern Matching", "AI-Only"],
-            index=0,
-            help="Pattern Matching uses regex patterns. AI-Only uses LLM for extraction.",
-            horizontal=True
-        )
-        mode = "pattern" if extraction_mode == "Pattern Matching" else "ai"
-        logger.info(f"User selected extraction mode: {extraction_mode} (mode={mode})")
+        mode = "ai"
+        logger.info(f"User selected extraction mode: AI-Only (mode={mode})")
         
         ai_service = st.selectbox("AI Service:", ["openai", "gemini"], help="AI service for image text extraction and AI-Only mode") 
 
@@ -753,13 +686,13 @@ def main():
     with col2:
         st.header("📊 Extraction Results")
         
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Structured Contacts", "🔍 Pattern Analysis", "📝 Raw Text", "🤖 AI Results", "🗃️ Database"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📋 Structured Contacts", "📝 Raw Text", "🤖 AI Results", "🗃️ Database"])
 
         if "current_results" in st.session_state:
             results = st.session_state.current_results
             timestamp = st.session_state.current_timestamp
             extraction_mode = results.get("extraction_mode", "unknown")
-            mode_badge = "🤖 AI-Only" if extraction_mode == "ai" else "📊 Pattern Matching"
+            mode_badge = "🤖 AI-Only"
             st.subheader(f"Results from: {timestamp}")
             st.info(f"Extraction Mode: {mode_badge}")
             with tab1:
@@ -771,15 +704,8 @@ def main():
                 else:
                     st.info("No structured contacts found.")
             with tab2:
-                patterns = results.get("contact_patterns", {})
-                for category, items in patterns.items():
-                    if items:
-                        st.subheader(category.replace("_", " ").title())
-                        for item in items:
-                            st.write(f"• {item}")
-            with tab3:
                 st.text_area("Raw input text:", value=results.get("raw_text", ""), height=300, disabled=True)
-            with tab4:
+            with tab3:
                 llm_results = results.get("llm_enhanced", [])
                 if llm_results:
                     for model_name, result in llm_results:
@@ -796,7 +722,7 @@ def main():
         else:
             st.info("👆 Enter some text to start extracting contact information!")
 
-        with tab5:
+        with tab4:
             st.header("🗃️ All Contacts in Database")
             try:
                 all_contacts_df = get_all_contacts_df()
