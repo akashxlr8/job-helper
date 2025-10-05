@@ -17,6 +17,13 @@ import requests
 from streamlit_paste_button import paste_image_button as pbutton
 from typing import cast
 from database import save_contacts_to_db, get_all_contacts_df
+from loguru import logger
+
+# Setup loguru logging config
+LOG_PATH = os.path.join(os.path.dirname(__file__), "logs", "job-helper.log")
+logger.remove()
+logger.add(LOG_PATH, rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
+logger.add(lambda msg: print(msg, end=""), level="WARNING")
 
 
 
@@ -221,15 +228,15 @@ class ContactExtractor:
                 client = self.openai_client
                 if client is None:
                     raise RuntimeError("OpenAI client not initialized")
+                logger.info(f"OpenAI request: model={model_name}, prompt={prompt}")
                 resp = client.chat.completions.create(
                     model=model_name,
-                    messages=[
-                        {"role": "system", "content": "You extract accurate contact information and output strict JSON."},
-                        {"role": "user", "content": prompt.format(text=text)}
-                    ],
+                    messages=[{"role": "user", "content": prompt.format(text=text)}],
+                    max_tokens=8000,
                     temperature=0.1,
                 )
                 content = resp.choices[0].message.content or ""
+                logger.info(f"OpenAI response: {content}")
                 try:
                     data = json.loads(content)
                 except json.JSONDecodeError:
@@ -238,26 +245,33 @@ class ContactExtractor:
                 if data:
                     results.append((model_name, data))
             except Exception as e:
+                logger.error(f"OpenAI API error: {e}")
                 st.warning(f"OpenAI API error: {e}")
 
         # Gemini
         if use_gemini:
             try:
                 gm = self._select_gemini_model(gemini_model, "text")
-                _GM = getattr(genai, "GenerativeModel", None)
-                if _GM is None:
-                    raise RuntimeError("Gemini GenerativeModel not available in this package version")
-                runtime = _GM(gm)
-                resp = runtime.generate_content(prompt.format(text=text))
-                content = getattr(resp, "text", "") or ""
-                if content:
-                    try:
-                        data = json.loads(content)
-                    except json.JSONDecodeError:
-                        m = re.search(r"\{[\s\S]*\}", content)
-                        data = json.loads(m.group()) if m else {}
-                    if data:
-                        results.append((gm, data))
+                logger.info(f"Gemini request: model={gm}, prompt={prompt}")
+                try:
+                    _GM = getattr(genai, "GenerativeModel", None)
+                    if _GM is None:
+                        raise RuntimeError("Gemini GenerativeModel not available in this package version")
+                    runtime = _GM(gm)
+                    resp = runtime.generate_content(prompt.format(text=text))
+                    content = getattr(resp, "text", "") or ""
+                    logger.info(f"Gemini response: {content}")
+                    if content:
+                        try:
+                            data = json.loads(content)
+                        except json.JSONDecodeError:
+                            m = re.search(r"\{[\s\S]*\}", content)
+                            data = json.loads(m.group()) if m else {}
+                        if data:
+                            results.append((gm, data))
+                except Exception as e:
+                    logger.error(f"Gemini API error: {e}")
+                    st.warning(f"Gemini API error: {e}")
             except Exception as e:
                 st.warning(f"Gemini API error: {e}")
 
@@ -273,24 +287,32 @@ class ContactExtractor:
         if not self.openai_client:
             return None
         try:
-            base64_image = self.encode_image_to_base64(image)
+            model_name = self._select_openai_model(model, "vision")
             prompt = custom_prompt or (
                 "Extract all text from this image, focusing on names, titles, emails, phones, companies, LinkedIn."
             )
-            resp = self.openai_client.chat.completions.create(
-                model=self._select_openai_model(model, "vision"),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                        ],
-                    }
-                ],
-                max_tokens=2000,
-            )
-            return resp.choices[0].message.content or None
+            logger.info(f"OpenAI Vision request: model={model}, prompt={prompt}")
+            try:
+                base64_image = self.encode_image_to_base64(image)
+                resp = self.openai_client.chat.completions.create(
+                    model=self._select_openai_model(model, "vision"),
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
+                            ],
+                        }
+                    ],
+                    max_tokens=8000,
+                )
+                logger.info(f"OpenAI Vision response: {resp}")
+                return resp.choices[0].message.content or None
+            except Exception as e:
+                logger.error(f"Error extracting text from image with OpenAI: {e}")
+                st.error(f"Error extracting text from image with OpenAI: {e}")
+                return None
         except Exception as e:
             st.error(f"Error extracting text from image with OpenAI: {e}")
             return None
@@ -299,15 +321,19 @@ class ContactExtractor:
         if not self.gemini_enabled:
             return None
         try:
-            prompt = custom_prompt or (
-                "Extract all text from this image. Focus on contact info: names, emails, phones, titles, companies."
-            )
-            _GM = getattr(genai, "GenerativeModel", None)
-            if _GM is None:
-                raise RuntimeError("Gemini GenerativeModel not available in this package version")
-            runtime = _GM(self._select_gemini_model(model, "vision"))
-            resp = runtime.generate_content([prompt, image])
-            return getattr(resp, "text", None)
+            logger.info(f"Gemini Vision request: model={model}, prompt={custom_prompt}")
+            try:
+                _GM = getattr(genai, "GenerativeModel", None)
+                if _GM is None:
+                    raise RuntimeError("Gemini GenerativeModel not available in this package version")
+                runtime = _GM(self._select_gemini_model(model, "vision"))
+                resp = runtime.generate_content([custom_prompt or "Extract all text from this image.", image])
+                logger.info(f"Gemini Vision response: {resp}")
+                return getattr(resp, "text", None)
+            except Exception as e:
+                logger.error(f"Error extracting text from image with Gemini: {e}")
+                st.error(f"Error extracting text from image with Gemini: {e}")
+                return None
         except Exception as e:
             st.error(f"Error extracting text from image with Gemini: {e}")
             return None
@@ -356,7 +382,11 @@ class ContactExtractor:
     def structure_final_results(self, all_results: dict) -> list[dict]:
         structured: list[dict] = []
         for model_name, llm_result in all_results.get("llm_enhanced", []):
-            for contact in llm_result.get("contacts", []) or []:
+            contacts = llm_result.get("contacts")
+            if contacts is None:
+                st.warning(f"OpenAI API error: Missing 'contacts' key in response: {llm_result}")
+                continue
+            for contact in contacts or []:
                 c = dict(contact)
                 c["source"] = f"AI-Refined ({model_name})"
                 c["confidence"] = c.get("confidence", "medium")
