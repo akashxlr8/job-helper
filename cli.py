@@ -9,12 +9,14 @@ import os
 import argparse
 from pathlib import Path
 import json
+from datetime import datetime
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app import ContactExtractor
 from utils import analyze_extraction_quality
+from database import save_contacts_to_db
 
 def extract_contacts_cli(text_input, output_dir=None, show_raw=False):
     """Extract contacts from text via CLI"""
@@ -66,6 +68,13 @@ def extract_contacts_cli(text_input, output_dir=None, show_raw=False):
         # Save results
         filename = source_name.replace('.', '_') if '.' in source_name else source_name
         json_path, csv_path = extractor.save_results(results, filename)
+        
+        # Save to database
+        try:
+            save_contacts_to_db(results, datetime.now().strftime('%Y%m%d_%H%M%S'), source_name)
+            print("✅ Results saved to the database.")
+        except Exception as e:
+            print(f"❌ Error saving to database: {e}")
         
         # Move to output directory
         if json_path:

@@ -13,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app import ContactExtractor
 from utils import analyze_extraction_quality
+from database import save_contacts_to_db
 
 def setup_logging():
     """Set up logging for batch processing"""
@@ -76,6 +77,13 @@ def process_folder(input_folder, output_folder=None, file_extensions=None):
             # Save individual results
             filename = image_file.stem
             json_path, csv_path = extractor.save_results(results, filename)
+
+            # Save to database
+            try:
+                save_contacts_to_db(results, datetime.now().strftime('%Y%m%d_%H%M%S'), image_file.name)
+                logger.info(f"✅ Results for {image_file.name} saved to the database.")
+            except Exception as e:
+                logger.error(f"❌ Error saving results for {image_file.name} to database: {str(e)}")
             
             # Move files to output folder
             if json_path:
@@ -148,20 +156,12 @@ def process_folder(input_folder, output_folder=None, file_extensions=None):
     with open(detailed_json_path, 'w') as f:
         json.dump(detailed_report, f, indent=2, default=str)
     
-    # Consolidate all contacts into one file
-    all_contacts = []
-    for result in all_results:
-        contacts = result['results'].get('structured_contacts', [])
-        for contact in contacts:
-            contact['source_file'] = result['filename']
-            all_contacts.append(contact)
-    
-    if all_contacts:
-        consolidated_df = pd.DataFrame(all_contacts)
-        consolidated_csv_path = output_folder / f"all_contacts_{timestamp}.csv"
-        consolidated_df.to_csv(consolidated_csv_path, index=False)
-        
-        logger.info(f"📊 Consolidated {len(all_contacts)} contacts into {consolidated_csv_path}")
+    # Save to database
+            try:
+                save_contacts_to_db(results, datetime.now().strftime('%Y%m%d_%H%M%S'), image_file.name)
+                logger.info(f"✅ Results for {image_file.name} saved to the database.")
+            except Exception as e:
+                logger.error(f"❌ Error saving results for {image_file.name} to database: {str(e)}")
     
     logger.info(f"🎉 Batch processing complete!")
     logger.info(f"📁 Results saved to: {output_folder}")
@@ -170,96 +170,18 @@ def process_folder(input_folder, output_folder=None, file_extensions=None):
     
     return detailed_report
 
-def create_contact_database(contacts_folder, db_name="contact_database.csv"):
-    """Create a searchable contact database from all extracted contacts"""
-    logger = setup_logging()
-    
-    contacts_path = Path(contacts_folder)
-    if not contacts_path.exists():
-        logger.error(f"Contacts folder {contacts_folder} does not exist")
-        return
-    
-    # Find all CSV files with contact data
-    csv_files = list(contacts_path.glob("*.csv"))
-    csv_files = [f for f in csv_files if not f.name.startswith("batch_summary")]
-    
-    if not csv_files:
-        logger.warning(f"No contact CSV files found in {contacts_folder}")
-        return
-    
-    logger.info(f"Found {len(csv_files)} contact files to consolidate")
-    
-    all_contacts = []
-    
-    for csv_file in csv_files:
-        try:
-            df = pd.read_csv(csv_file)
-            
-            # Add source file information
-            df['source_file'] = csv_file.name
-            df['extracted_date'] = datetime.fromtimestamp(csv_file.stat().st_mtime).isoformat()
-            
-            all_contacts.append(df)
-            logger.info(f"Added {len(df)} contacts from {csv_file.name}")
-            
-        except Exception as e:
-            logger.error(f"Error reading {csv_file}: {str(e)}")
-    
-    if not all_contacts:
-        logger.error("No contacts could be loaded")
-        return
-    
-    # Combine all contacts
-    combined_df = pd.concat(all_contacts, ignore_index=True)
-    
-    # Clean and deduplicate
-    # Remove empty rows
-    combined_df = combined_df.dropna(how='all')
-    
-    # Remove duplicates based on email (if available)
-    combined_df = combined_df.drop_duplicates(subset=['email'], keep='first')
-    
-    # Add unique ID
-    combined_df['contact_id'] = range(1, len(combined_df) + 1)
-    
-    # Reorder columns
-    column_order = ['contact_id', 'name', 'title', 'company', 'email', 'phone', 
-                   'linkedin', 'department', 'notes', 'source', 'source_file', 'extracted_date']
-    
-    # Only include columns that exist
-    available_columns = [col for col in column_order if col in combined_df.columns]
-    combined_df = combined_df[available_columns]
-    
-    # Save the database
-    db_path = contacts_path / db_name
-    combined_df.to_csv(db_path, index=False)
-    
-    logger.info(f"📊 Contact database created: {db_path}")
-    logger.info(f"👥 Total contacts: {len(combined_df)}")
-    logger.info(f"📧 Contacts with email: {combined_df['email'].notna().sum()}")
-    logger.info(f"📱 Contacts with phone: {combined_df['phone'].notna().sum()}")
-    
-    return combined_df
-
 def main():
     """Main function for command-line usage"""
     parser = argparse.ArgumentParser(description="Batch process screenshots for contact extraction")
     parser.add_argument("input_folder", help="Folder containing screenshots")
     parser.add_argument("-o", "--output", help="Output folder for results")
-    parser.add_argument("-d", "--database", action="store_true", 
-                       help="Create consolidated contact database")
     parser.add_argument("--extensions", nargs="+", default=['.png', '.jpg', '.jpeg'],
                        help="File extensions to process")
     
     args = parser.parse_args()
     
-    # Process screenshots
-    if args.database:
-        # If database flag is set, assume input_folder contains CSV files
-        create_contact_database(args.input_folder)
-    else:
-        # Process image folder
-        process_folder(args.input_folder, args.output, args.extensions)
+    # Process image folder
+    process_folder(args.input_folder, args.output, args.extensions)
 
 if __name__ == "__main__":
     main()
