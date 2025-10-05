@@ -34,14 +34,42 @@ from database import get_all_contacts_df, save_contacts_to_db
 # --- Configuration Constants ---
 LOG_PATH = Path(__file__).parent / "logs" / "job-helper.log"
 DATA_DIR = Path("extracted_contacts")
-DEFAULT_PROMPT_TEMPLATE = """You are an expert at extracting contact information from job-related text and images.
+DEFAULT_PROMPT_TEMPLATE = """You are a meticulous HR data extraction bot. Your goal is to analyze job posting announcements and extract key information into a structured JSON format, following the example provided.
 
-Extract contact information and return it as a JSON object with this exact structure:
-{{
-    "contacts": [{{"name": "", "title": "", "company": "", "email": "", "phone": "", "linkedin": "", "department": "", "confidence": "high/medium/low", "notes": ""}}],
-    "general_info": {{"company": "", "department": "", "job_posting_title": "", "location": ""}},
-    "refinements": {{"additional_contacts_found": "0", "corrections_made": ""}}
-}}
+---
+**EXAMPLE**
+
+**TEXT:**
+"Mohammed Imran [MI] - Head of Talent Acquisition & Talent Branding at JioHotstar / Disney Star... Yes, we are hiring across our Engineering, Security, Product, Design & Analytics team at JioHotstar!... Sr Staff Data Scientist [7+ yrs exp]... Staff/Sr Staff Backend Engineer [7+ yrs exp]... Pls apply on career site directly or email your resume: Subject line: 'Role' & 'Your current company' To: mohammed.imranullah@jiostar.com... Note: 1. We are not hiring Freshers..."
+
+**JSON OUTPUT:**
+{
+    "contacts": [{
+        "name": "Mohammed Imran",
+        "title": "Head of Talent Acquisition & Talent Branding",
+        "company": "JioHotstar / Disney Star",
+        "email": "mohammed.imranullah@jiostar.com"
+    }],
+    "general_info": {
+        "primary_company": "JioHotstar",
+        "hiring_departments": ["Engineering", "Security", "Product", "Design", "Analytics"]
+    },
+    "open_roles": [
+        {"role_title": "Sr Staff Data Scientist", "experience_required": "7+ yrs"},
+        {"role_title": "Staff/Sr Staff Backend Engineer", "experience_required": "7+ yrs"}
+    ],
+    "application_instructions": {
+        "method": "Apply on career site directly or email your resume",
+        "recipient_email": "mohammed.imranullah@jiostar.com",
+        "email_subject_format": "'Role' & 'Your current company'"
+    },
+    "important_notes": ["We are not hiring Freshers at the moment"]
+}
+---
+
+**YOUR TASK**
+
+Now, analyze the following text and provide the JSON output in the exact same format as the example. If a section or field is not present, use an empty string "" or an empty list [].
 
 TEXT TO ANALYZE:
 {text}
