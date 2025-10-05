@@ -43,20 +43,30 @@ class ContactExtractor:
         # Initialize OpenAI
         self.openai_client = None
         if openai_api_key:
+            logger.info("Configuring OpenAI API client")
             self.openai_client = OpenAI(api_key=openai_api_key)
+            logger.info("OpenAI API client configured successfully")
+        else:
+            logger.warning("No OpenAI API key provided")
 
         # Initialize Gemini config
         self.gemini_enabled = False
         if google_api_key:
             try:
+                logger.info("Configuring Gemini API")
                 _configure = getattr(genai, "configure", None)
                 if callable(_configure):
                     _configure(api_key=google_api_key)
                     self.gemini_enabled = True
+                    logger.info("Gemini API configured successfully")
                 else:
                     self.gemini_enabled = False
-            except Exception:
+                    logger.warning("Gemini configure method not callable")
+            except Exception as e:
                 self.gemini_enabled = False
+                logger.error(f"Failed to configure Gemini API: {e}")
+        else:
+            logger.warning("No Google API key provided")
 
         # Model defaults and capability sets
         self._default_openai_text = "gpt-4o"
@@ -351,44 +361,75 @@ class ContactExtractor:
             return None
 
     # -------------------- Pipelines --------------------
-    def process_text(self, text: str, auto_ai_refinement: bool = True,
+    def process_text(self, text: str, mode: str = "pattern",
                      ai_service: str | None = None,
                      openai_model: str | None = None,
                      gemini_model: str | None = None) -> dict:
+        """Process raw text and return structured extraction results.
+
+        Args:
+            text: input text to process
+            mode: "pattern" for pattern matching only, "ai" for AI-only extraction
+            ai_service/openai_model/gemini_model: AI service selection
+        """
+        logger.info(f"Starting text processing with mode={mode}, ai_service={ai_service}")
         all_results = {
             "raw_text": text,
             "contact_patterns": {},
             "llm_enhanced": [],
             "structured_contacts": [],
+            "extraction_mode": mode,
         }
-        patterns = self.extract_contact_patterns(text)
-        all_results["contact_patterns"] = patterns
 
-        if text.strip():
-            if auto_ai_refinement:
-                llm = self.enhance_with_llm(text, patterns, provider_preference=ai_service, openai_model=openai_model, gemini_model=gemini_model)
-            else:
-                llm = self.enhance_with_llm(text, provider_preference=ai_service, openai_model=openai_model, gemini_model=gemini_model)
-            all_results["llm_enhanced"] = llm
+        if mode == "ai":
+            # AI-Only mode: skip pattern matching, use only LLM
+            logger.info("AI-only mode: calling LLM for extraction")
+            if text.strip():
+                llm = self.enhance_with_llm(text, None, provider_preference=ai_service, openai_model=openai_model, gemini_model=gemini_model)
+                all_results["llm_enhanced"] = llm
+                logger.info(f"LLM returned {len(llm)} result(s)")
+        else:
+            # Pattern Matching mode: use regex patterns only
+            logger.info("Pattern matching mode: using regex extraction")
+            patterns = self.extract_contact_patterns(text)
+            all_results["contact_patterns"] = patterns
+            logger.info(f"Pattern matching found: {len(patterns.get('emails', []))} emails, {len(patterns.get('phones', []))} phones, {len(patterns.get('names', []))} names")
 
         all_results["structured_contacts"] = self.structure_final_results(all_results)
+        logger.info(f"Structured {len(all_results['structured_contacts'])} contact(s)")
         return all_results
 
-    def process_image(self, image: Image.Image, use_ai: bool = True, ai_service: str = "openai",
+    def process_image(self, image: Image.Image, mode: str = "pattern", ai_service: str = "openai",
                       custom_prompt: str | None = None,
-                      auto_ai_refinement: bool = True,
                       openai_model: str | None = None,
                       gemini_model: str | None = None) -> dict | None:
+        """Extract contacts from an image.
+        
+        Args:
+            image: PIL Image to process
+            mode: "pattern" for pattern matching, "ai" for AI-only extraction
+            ai_service: which AI service to use for image text extraction
+            custom_prompt: optional custom prompt for image extraction
+            openai_model/gemini_model: model selection
+        """
+        logger.info(f"Starting image processing with mode={mode}, ai_service={ai_service}")
         extracted_text: str | None = None
-        if use_ai:
-            if ai_service == "openai" and self.openai_client:
-                extracted_text = self.extract_text_from_image_openai(image, custom_prompt, model=openai_model)
-            elif ai_service == "gemini" and self.gemini_enabled:
-                extracted_text = self.extract_text_from_image_gemini(image, custom_prompt, model=gemini_model)
+        
+        # Always use AI for image text extraction (OCR alternative)
+        if ai_service == "openai" and self.openai_client:
+            logger.info("Using OpenAI for image text extraction")
+            extracted_text = self.extract_text_from_image_openai(image, custom_prompt, model=openai_model)
+        elif ai_service == "gemini" and self.gemini_enabled:
+            logger.info("Using Gemini for image text extraction")
+            extracted_text = self.extract_text_from_image_gemini(image, custom_prompt, model=gemini_model)
+        
         if not extracted_text:
+            logger.error("Failed to extract text from image")
             st.error("Could not extract text from image. Try a different AI service or check your API keys.")
             return None
-        return self.process_text(extracted_text, auto_ai_refinement, ai_service=ai_service, openai_model=openai_model, gemini_model=gemini_model)
+        
+        logger.info(f"Successfully extracted {len(extracted_text)} characters from image")
+        return self.process_text(extracted_text, mode=mode, ai_service=ai_service, openai_model=openai_model, gemini_model=gemini_model)
 
     # -------------------- Structuring and saving --------------------
     def structure_final_results(self, all_results: dict) -> list[dict]:
@@ -447,20 +488,27 @@ class ContactExtractor:
     def save_results(self, results: dict, filename: str | None = None):
         if filename is None:
             filename = f"contact_extraction_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        logger.info(f"Saving results to {filename}")
         json_path = self.data_dir / f"{filename}.json"
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+        logger.info(f"Saved JSON to {json_path}")
+        
         csv_path = None
         if results.get("structured_contacts"):
             df = pd.DataFrame(results["structured_contacts"])
             csv_path = self.data_dir / f"{filename}.csv"
             df.to_csv(csv_path, index=False)
+            logger.info(f"Saved CSV to {csv_path}")
         
         # Save to database
         try:
             save_contacts_to_db(results, datetime.now().strftime('%Y%m%d_%H%M%S'), filename)
+            logger.info("Successfully saved to database")
             st.success("✅ Results saved to the database.")
         except Exception as e:
+            logger.error(f"Error saving to database: {e}")
             st.error(f"Error saving to database: {e}")
 
         return json_path, csv_path
@@ -472,13 +520,17 @@ def main():
     st.set_page_config(page_title="Job Search Contact Extractor", page_icon="👔", layout="wide")
     st.title("👔 Job Search Contact Extractor")
     st.markdown("Upload screenshots or text; extract HR/recruiter contact details.")
+    
+    logger.info("App started/refreshed")
 
     if "extractor" not in st.session_state:
+        logger.info("Initializing ContactExtractor")
         st.session_state.extractor = ContactExtractor()
     
     # Clear any cached image data to prevent media file errors
     if "uploaded_image" in st.session_state:
         del st.session_state.uploaded_image
+        logger.debug("Cleared cached uploaded_image from session")
 
     with st.sidebar:
         st.header("⚙️ Configuration")
@@ -642,26 +694,33 @@ def main():
             st.rerun()
 
         st.markdown("---")
-        c1, c2 = st.columns(2)
-        with c1:
-            use_ai_enhancement = st.checkbox("🧠 Use AI Enhancement", value=True)
-        with c2:
-            auto_ai_refinement = st.checkbox("🔄 Auto AI Refinement", value=True)
-        ai_service = st.selectbox("AI Service:", ["openai", "gemini"]) 
+        st.subheader("🎯 Extraction Mode")
+        extraction_mode = st.radio(
+            "Choose extraction method:",
+            options=["Pattern Matching", "AI-Only"],
+            index=0,
+            help="Pattern Matching uses regex patterns. AI-Only uses LLM for extraction.",
+            horizontal=True
+        )
+        mode = "pattern" if extraction_mode == "Pattern Matching" else "ai"
+        logger.info(f"User selected extraction mode: {extraction_mode} (mode={mode})")
+        
+        ai_service = st.selectbox("AI Service:", ["openai", "gemini"], help="AI service for image text extraction and AI-Only mode") 
 
         can_process = (text_content.strip() if input_method != "Upload Image/Screenshot" else uploaded_image is not None)
         if st.button("🔍 Extract Contacts", type="primary", disabled=not can_process):
+            logger.info(f"Extract button clicked with mode={mode}, input_method={input_method}")
             selected_openai_model = st.session_state.get("openai_model")
             selected_gemini_model = st.session_state.get("gemini_model")
             if input_method == "Upload Image/Screenshot" and uploaded_image:
+                logger.info("Processing image upload")
                 with st.spinner("Extracting text from image and processing contacts..."):
                     custom_prompt = st.session_state.get("extraction_prompt")
                     results = st.session_state.extractor.process_image(
                         uploaded_image,
-                        use_ai=use_ai_enhancement,
+                        mode=mode,
                         ai_service=ai_service,
                         custom_prompt=custom_prompt,
-                        auto_ai_refinement=auto_ai_refinement,
                         openai_model=selected_openai_model,
                         gemini_model=selected_gemini_model,
                     )
@@ -670,12 +729,14 @@ def main():
                         json_path, csv_path = st.session_state.extractor.save_results(results, filename=f"image_extraction_{ts}")
                         st.session_state.current_results = results
                         st.session_state.current_timestamp = ts
+                        logger.info(f"Image processing complete, saved to {json_path.name}")
                         st.success(f"✅ Processing complete! Results saved to {json_path.name}")
             elif text_content.strip():
+                logger.info("Processing text input")
                 with st.spinner("Extracting contact information..."):
                     results = st.session_state.extractor.process_text(
                         text_content,
-                        auto_ai_refinement,
+                        mode=mode,
                         ai_service=ai_service,
                         openai_model=selected_openai_model,
                         gemini_model=selected_gemini_model,
@@ -684,6 +745,7 @@ def main():
                     json_path, csv_path = st.session_state.extractor.save_results(results, filename=f"text_extraction_{ts}")
                     st.session_state.current_results = results
                     st.session_state.current_timestamp = ts
+                    logger.info(f"Text processing complete, saved to {json_path}")
                     st.success(f"✅ Extraction done! Results saved to {json_path}")
                     if csv_path:
                         st.success(f"📊 CSV file saved to {csv_path}")
@@ -696,7 +758,10 @@ def main():
         if "current_results" in st.session_state:
             results = st.session_state.current_results
             timestamp = st.session_state.current_timestamp
+            extraction_mode = results.get("extraction_mode", "unknown")
+            mode_badge = "🤖 AI-Only" if extraction_mode == "ai" else "📊 Pattern Matching"
             st.subheader(f"Results from: {timestamp}")
+            st.info(f"Extraction Mode: {mode_badge}")
             with tab1:
                 if results.get("structured_contacts"):
                     df = pd.DataFrame(results["structured_contacts"])
