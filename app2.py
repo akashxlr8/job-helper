@@ -364,8 +364,19 @@ def handle_text_input() -> str:
     )
 
 def handle_image_input() -> Optional[Image.Image]:
-    """Renders the UI for image input and returns a PIL Image object."""
+    """Renders the UI for image input and returns a PIL Image object. Supports file upload and clipboard paste."""
+    st.markdown("**Upload or paste an image (from clipboard):**")
     img_file = st.file_uploader("Upload a screenshot or image", type=["png", "jpg", "jpeg"])
+    pasted_image = None
+    paste_result = pbutton("📋 Paste an image from clipboard")
+    if paste_result and paste_result.image_data is not None:
+        st.info("Image data received from clipboard.")
+        pasted_image = paste_result.image_data
+        if pasted_image is not None and isinstance(pasted_image, Image.Image):
+            st.image(pasted_image, caption="Pasted Image")
+            return pasted_image
+        else:
+            st.error("Clipboard data is not a valid image.")
     if img_file:
         try:
             image = Image.open(img_file)
