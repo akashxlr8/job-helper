@@ -115,7 +115,9 @@ class ContactExtractor:
             valid_models = GEMINI_VISION_MODELS if purpose == "vision" else GEMINI_TEXT_MODELS
             default = DEFAULT_GEMINI_VISION_MODEL if purpose == "vision" else DEFAULT_GEMINI_TEXT_MODEL
         
-        return requested if requested and requested in valid_models else default
+        selected = requested if requested and requested in valid_models else default
+        logger.debug(f"Model selection for {provider}/{purpose}: requested='{requested}', valid={valid_models}, selected='{selected}'")
+        return selected
 
     # -------------------- Response Parsing Helpers --------------------
     def _clean_and_parse_json(self, response_text: str) -> Optional[Dict[str, Any]]:
@@ -133,11 +135,16 @@ class ContactExtractor:
 
     def _create_fallback_json(self, text: str) -> Dict[str, Any]:
         """Creates a basic JSON structure from raw text when full parsing fails."""
+        name_match = re.search(r"Name:\s*(.+)", text, re.I)
+        title_match = re.search(r"Title:\s*(.+)", text, re.I)
+        company_match = re.search(r"Company:\s*(.+)", text, re.I)
+        email_match = re.search(r"Email:\s*(\S+@\S+)", text, re.I)
+        
         contact = {
-            "name": (re.search(r"Name:\s*(.+)", text, re.I).group(1) or "").strip(),
-            "title": (re.search(r"Title:\s*(.+)", text, re.I).group(1) or "").strip(),
-            "company": (re.search(r"Company:\s*(.+)", text, re.I).group(1) or "").strip(),
-            "email": (re.search(r"Email:\s*(\S+@\S+)", text, re.I).group(1) or "").strip(),
+            "name": (name_match.group(1) if name_match else "").strip(),
+            "title": (title_match.group(1) if title_match else "").strip(),
+            "company": (company_match.group(1) if company_match else "").strip(),
+            "email": (email_match.group(1) if email_match else "").strip(),
             "phone": "", "linkedin": "", "department": "",
             "confidence": "low",
             "notes": "Fallback parsing due to AI response error.",
@@ -161,8 +168,8 @@ class ContactExtractor:
                 resp = self.openai_client.chat.completions.create(
                     model=model_name,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4096,
-                    temperature=0.1,
+                    max_completion_tokens=4096,
+                    # temperature=0.1,
                 )
                 content = resp.choices[0].message.content or ""
                 parsed_data = self._clean_and_parse_json(content)
@@ -178,7 +185,10 @@ class ContactExtractor:
             model_name = self._select_model(gemini_model, "text", "gemini")
             logger.info(f"Requesting Gemini enhancement with model: {model_name}")
             try:
-                model = genai.GenerativeModel(model_name)
+                _GM = getattr(genai, "GenerativeModel", None) if GENAI_AVAILABLE else None
+                if _GM is None:
+                    raise RuntimeError("Gemini GenerativeModel not available in this package version")
+                model = _GM(model_name)
                 resp = model.generate_content(prompt)
                 content = getattr(resp, "text", "")
                 parsed_data = self._clean_and_parse_json(content)
@@ -194,13 +204,16 @@ class ContactExtractor:
 
     def extract_text_from_image(self, image: Image.Image, provider: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Optional[str]:
         """Extracts text from an image using the specified vision model provider."""
+        logger.info(f"Extracting text from image with provider: {provider}")
+        
         if provider == "openai" and self.openai_client:
             model_name = self._select_model(openai_model, "vision", "openai")
-            logger.info(f"Requesting OpenAI vision with model: {model_name}")
+            logger.info(f"Using OpenAI vision model: {model_name} (requested: {openai_model})")
             try:
                 buffer = io.BytesIO()
                 image.save(buffer, format="PNG")
                 base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                logger.info(f"Image encoded to base64, size: {len(base64_image)} characters")
                 
                 resp = self.openai_client.chat.completions.create(
                     model=model_name,
@@ -210,23 +223,35 @@ class ContactExtractor:
                     ]}],
                     max_tokens=4096,
                 )
-                return resp.choices[0].message.content
+                content = resp.choices[0].message.content
+                logger.info(f"OpenAI vision response received, content length: {len(content) if content else 0}")
+                return content
             except Exception as e:
                 logger.error(f"OpenAI Vision error: {e}")
                 st.error(f"OpenAI Vision error: {e}")
+                return None
 
         elif provider == "gemini" and self.gemini_enabled:
             model_name = self._select_model(gemini_model, "vision", "gemini")
-            logger.info(f"Requesting Gemini vision with model: {model_name}")
+            logger.info(f"Using Gemini vision model: {model_name} (requested: {gemini_model})")
             try:
-                model = genai.GenerativeModel(model_name)
+                _GM = getattr(genai, "GenerativeModel", None) if GENAI_AVAILABLE else None
+                if _GM is None:
+                    raise RuntimeError("Gemini GenerativeModel not available in this package version")
+                model = _GM(model_name)
                 resp = model.generate_content([VISION_PROMPT, image])
-                return getattr(resp, "text", None)
+                content = getattr(resp, "text", None)
+                logger.info(f"Gemini vision response received, content length: {len(content) if content else 0}")
+                return content
             except Exception as e:
                 logger.error(f"Gemini Vision error: {e}")
                 st.error(f"Gemini Vision error: {e}")
+                return None
         
-        return None
+        else:
+            logger.error(f"Vision extraction not available. Provider: {provider}, OpenAI client: {self.openai_client is not None}, Gemini enabled: {self.gemini_enabled}")
+            st.error(f"Vision extraction not available for provider: {provider}")
+            return None
 
     # -------------------- Pipelines --------------------
     def process_text(self, text: str, ai_service: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Dict:
@@ -246,6 +271,8 @@ class ContactExtractor:
     def process_image(self, image: Image.Image, ai_service: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Optional[Dict]:
         """Processes an image to extract contacts by first extracting text."""
         logger.info(f"Starting image processing with service: {ai_service}")
+        logger.info(f"Image size: {image.size}, format: {image.format}, mode: {image.mode}")
+        
         extracted_text = self.extract_text_from_image(image, ai_service, openai_model, gemini_model)
 
         if not extracted_text:
@@ -254,6 +281,7 @@ class ContactExtractor:
             return None
             
         logger.info(f"Extracted {len(extracted_text)} characters from image.")
+        logger.debug(f"Extracted text preview: {extracted_text[:200]}...")
         return self.process_text(extracted_text, ai_service, openai_model, gemini_model)
 
     # -------------------- Structuring and Saving --------------------
