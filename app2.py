@@ -204,6 +204,8 @@ class ContactExtractor:
         You are an expert at extracting and REFINING contact information from job-related text and images.
         Review pattern-based results, then refine using the original text.
 
+        IMPORTANT: Your entire response MUST be a single valid JSON object matching the schema below. Do NOT include markdown, explanations, or any text outside the JSON block. Do NOT wrap the JSON in code fences.
+
         Return ONLY JSON with this structure:
         {{
             "contacts": [{{"name": "", "title": "", "company": "", "email": "", "phone": "", "linkedin": "", "department": "", "confidence": "high/medium/low", "notes": ""}}],
@@ -239,9 +241,19 @@ class ContactExtractor:
                 logger.info(f"OpenAI response: {content}")
                 try:
                     data = json.loads(content)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    logger.error(f"OpenAI response not valid JSON: {content}")
                     m = re.search(r"\{[\s\S]*\}", content)
-                    data = json.loads(m.group()) if m else {}
+                    if m:
+                        try:
+                            data = json.loads(m.group())
+                        except Exception as e2:
+                            logger.error(f"OpenAI fallback JSON parse failed: {e2}")
+                            st.warning(f"OpenAI API error: Could not parse response as JSON. See logs for details.")
+                            data = None
+                    else:
+                        st.warning(f"OpenAI API error: Could not find JSON in response. See logs for details.")
+                        data = None
                 if data:
                     results.append((model_name, data))
             except Exception as e:
