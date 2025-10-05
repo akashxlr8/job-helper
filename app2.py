@@ -100,6 +100,7 @@ SESS_KEY_TIMESTAMP = "current_timestamp"
 # --- Logger Setup ---
 logger.remove()
 logger.add(LOG_PATH, rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
+
 logger.add(lambda msg: print(msg, end=""), level="WARNING")
 
 
@@ -151,6 +152,7 @@ class ContactExtractor:
     def _clean_and_parse_json(self, response_text: str) -> Optional[Dict[str, Any]]:
         """Cleans common artifacts from LLM JSON responses and parses the string."""
         try:
+            logger.debug(f"Raw LLM response text: {response_text[:500]}")
             # Attempt to find the JSON block using regex, more robust than stripping
             match = re.search(r"\{[\s\S]*\}", response_text)
             if match:
@@ -163,6 +165,7 @@ class ContactExtractor:
 
     def _create_fallback_json(self, text: str) -> Dict[str, Any]:
         """Creates a basic JSON structure from raw text when full parsing fails."""
+        logger.debug(f"Fallback parsing triggered for text: {text[:500]}")
         name_match = re.search(r"Name:\s*(.+)", text, re.I)
         title_match = re.search(r"Title:\s*(.+)", text, re.I)
         company_match = re.search(r"Company:\s*(.+)", text, re.I)
@@ -186,8 +189,11 @@ class ContactExtractor:
     # -------------------- Core LLM Interaction --------------------
     def enhance_with_llm(self, text: str, provider: str, openai_model: Optional[str], gemini_model: Optional[str]) -> List[Tuple[str, Dict]]:
         """Orchestrates contact extraction using the specified LLM provider."""
+        logger.debug(f"Enhance_with_llm called with text: {text[:200]}")
+        logger.debug(f"Provider: {provider}, OpenAI model: {openai_model}, Gemini model: {gemini_model}")
         results = []
         prompt = DEFAULT_PROMPT_TEMPLATE.format(text=text)
+        logger.debug(f"Prompt sent to LLM: {prompt[:500]}")
 
         if provider == "openai" and self.openai_client:
             model_name = self._select_model(openai_model, "text", "openai")
@@ -231,6 +237,7 @@ class ContactExtractor:
         return results
 
     def extract_text_from_image(self, image: Image.Image, provider: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Optional[str]:
+        logger.debug(f"Image object: {image}")
         """Extracts text from an image using the specified vision model provider."""
         logger.info(f"Extracting text from image with provider: {provider}")
         
@@ -284,6 +291,7 @@ class ContactExtractor:
     # -------------------- Pipelines --------------------
     def process_text(self, text: str, ai_service: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Dict:
         """Processes raw text to extract contacts."""
+        logger.debug(f"process_text input: {text[:500]}")
         logger.info(f"Starting text processing with service: {ai_service}")
         llm_results = self.enhance_with_llm(text, ai_service, openai_model, gemini_model)
         # Use the first LLM result for HR fields (assuming single model for now)
@@ -301,6 +309,7 @@ class ContactExtractor:
         }
 
     def process_image(self, image: Image.Image, ai_service: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Optional[Dict]:
+        logger.debug(f"process_image input: image size {image.size}, format {image.format}, mode {image.mode}")
         """Processes an image to extract contacts by first extracting text."""
         logger.info(f"Starting image processing with service: {ai_service}")
         logger.info(f"Image size: {image.size}, format: {image.format}, mode: {image.mode}")
@@ -318,6 +327,7 @@ class ContactExtractor:
 
     # -------------------- Structuring and Saving --------------------
     def structure_final_results(self, llm_results: list) -> List[Dict]:
+        logger.debug(f"structure_final_results input: {llm_results}")
         """Formats the final list of contacts from LLM results."""
         structured = []
         for model_name, result_data in llm_results:
@@ -334,6 +344,7 @@ class ContactExtractor:
         return structured
 
     def save_results(self, results: Dict) -> Tuple[Path, Optional[Path]]:
+        logger.debug(f"save_results input: {results}")
         """Saves extraction results to JSON, CSV, and the database."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename_stem = f"contact_extraction_{timestamp}"
@@ -477,6 +488,7 @@ def display_results():
 
 # -------------------- Main Application Logic --------------------
 def main():
+    logger.debug("Starting main application loop.")
     """Main function to run the Streamlit application."""
     st.set_page_config(page_title="Job Contact Extractor", page_icon="👔", layout="wide")
     st.title("👔 Job Search Contact Extractor")
