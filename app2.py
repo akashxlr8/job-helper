@@ -163,8 +163,7 @@ class ContactExtractor:
     def enhance_with_llm(self, text: str, provider_preference: str | None = None,
                          openai_model: str | None = None,
                          gemini_model: str | None = None) -> list[tuple[str, dict]]:
-        prompt = f"""
-        You are an expert at extracting contact information from job-related text and images.
+        prompt = f"""You are an expert at extracting contact information from job-related text and images.
 
         Extract contact information and return it as a JSON object with this exact structure:
         {{
@@ -207,6 +206,7 @@ class ContactExtractor:
                 
                 # Remove any instruction text that might have been included
                 instruction_patterns = [
+                    r"You are an expert at extracting contact information",
                     r"Extract contact information and return it as a JSON object",
                     r"TEXT TO ANALYZE",
                 ]
@@ -299,14 +299,12 @@ class ContactExtractor:
         image.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode()
 
-    def extract_text_from_image_openai(self, image: Image.Image, custom_prompt: str | None = None, model: str | None = None) -> str | None:
+    def extract_text_from_image_openai(self, image: Image.Image, model: str | None = None) -> str | None:
         if not self.openai_client:
             return None
         try:
             model_name = self._select_openai_model(model, "vision")
-            prompt = custom_prompt or (
-                "Extract all text from this image, focusing on names, titles, emails, phones, companies, LinkedIn."
-            )
+            prompt = "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
             logger.info(f"OpenAI Vision request: model={model}, prompt={prompt}")
             try:
                 base64_image = self.encode_image_to_base64(image)
@@ -333,17 +331,18 @@ class ContactExtractor:
             st.error(f"Error extracting text from image with OpenAI: {e}")
             return None
 
-    def extract_text_from_image_gemini(self, image: Image.Image, custom_prompt: str | None = None, model: str | None = None) -> str | None:
+    def extract_text_from_image_gemini(self, image: Image.Image, model: str | None = None) -> str | None:
         if not self.gemini_enabled:
             return None
         try:
-            logger.info(f"Gemini Vision request: model={model}, prompt={custom_prompt}")
+            logger.info(f"Gemini Vision request: model={model}")
             try:
                 _GM = getattr(genai, "GenerativeModel", None) if GENAI_AVAILABLE else None
                 if _GM is None:
                     raise RuntimeError("Gemini GenerativeModel not available in this package version")
                 runtime = _GM(self._select_gemini_model(model, "vision"))
-                resp = runtime.generate_content([custom_prompt or "Extract all text from this image.", image])
+                prompt = "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
+                resp = runtime.generate_content([prompt, image])
                 logger.info(f"Gemini Vision response: {resp}")
                 return getattr(resp, "text", None)
             except Exception as e:
@@ -454,7 +453,6 @@ class ContactExtractor:
         return all_results
 
     def process_image(self, image: Image.Image, mode: str = "ai", ai_service: str = "openai",
-                      custom_prompt: str | None = None,
                       openai_model: str | None = None,
                       gemini_model: str | None = None) -> dict | None:
         """Extract contacts from an image.
@@ -472,10 +470,10 @@ class ContactExtractor:
         # Always use AI for image text extraction (OCR alternative)
         if ai_service == "openai" and self.openai_client:
             logger.info("Using OpenAI for image text extraction")
-            extracted_text = self.extract_text_from_image_openai(image, custom_prompt, model=openai_model)
+            extracted_text = self.extract_text_from_image_openai(image, model=openai_model)
         elif ai_service == "gemini" and self.gemini_enabled:
             logger.info("Using Gemini for image text extraction")
-            extracted_text = self.extract_text_from_image_gemini(image, custom_prompt, model=gemini_model)
+            extracted_text = self.extract_text_from_image_gemini(image, model=gemini_model)
         
         if not extracted_text:
             logger.error("Failed to extract text from image")
@@ -686,46 +684,8 @@ def main():
 
             st.markdown("---")
             with st.expander("🔍 Current Extraction Prompt", expanded=False):
-                st.text_area("AI will use this prompt:", value=st.session_state.get("extraction_prompt", ""), height=100, disabled=True)
-
-        st.subheader("🖼️ Image Extraction Settings")
-        default_prompt = (
-            "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
-        )
-        extraction_prompt = st.text_area(
-            "Image Extraction Prompt:",
-            value=st.session_state.get("extraction_prompt", default_prompt),
-            height=120,
-        )
-        st.session_state.extraction_prompt = extraction_prompt
-        preset_prompts = {
-            "Default": default_prompt,
-            "Job Postings": (
-                "Extract the job posting text. Focus on: job title, company, location, department, "
-                "application instructions, and HR/recruiter contact details (name, title, email, phone). "
-                "Example: 'Senior Software Engineer — TechCorp; Contact: Sarah Johnson, HR Manager; "
-                "Email: sarah.johnson@techcorp.com; Apply at careers@techcorp.com.' Return structured fields."
-            ),
-            "LinkedIn Profiles": (
-                "Extract profile content. Focus on: full name, current title, current company, previous roles, "
-                "location, and any contact links (email, website, LinkedIn URL). "
-                "Example: 'John Doe — Software Engineer at Acme Inc. | linkedin.com/in/johndoe | johndoe@gmail.com'."
-            ),
-            "Email Signatures": (
-                "Extract signature blocks. Focus on: sender name, job title, company, direct phone, mobile, "
-                "email address, office address, and social/profile links. Preserve labels (Direct:, Mobile:, Office:). "
-                "Example: 'Best,\nJane Smith\nRecruiter | Acme Corp\njane@acme.com\nDirect: +1-555-000-1111'."
-            ),
-            "Business Cards": (
-                "Extract all visible fields from a business card. Focus on: name, title, company, email, phone(s), "
-                "website, address, and any social handles. Preserve formatting where possible. "
-                "Example: 'Maria Lopez | Product Manager | example.com | maria@example.com | +44 20 7946 0958'."
-            ),
-        }
-        selected_preset = st.selectbox("Or choose a preset:", ["Custom"] + list(preset_prompts.keys()))
-        if selected_preset != "Custom":
-            st.session_state.extraction_prompt = preset_prompts[selected_preset]
-            st.rerun()
+                default_prompt = "Extract all text. Focus on contact info: names, phones, emails, job titles, companies."
+                st.text_area("AI will use this prompt:", value=default_prompt, height=100, disabled=True)
 
         st.markdown("---")
         st.subheader("🎯 Extraction Mode")
@@ -742,12 +702,10 @@ def main():
             if input_method == "Upload Image/Screenshot" and uploaded_image:
                 logger.info("Processing image upload")
                 with st.spinner("Extracting text from image and processing contacts..."):
-                    custom_prompt = st.session_state.get("extraction_prompt")
                     results = st.session_state.extractor.process_image(
                         uploaded_image,
                         mode=mode,
                         ai_service=ai_service,
-                        custom_prompt=custom_prompt,
                         openai_model=selected_openai_model,
                         gemini_model=selected_gemini_model,
                     )
