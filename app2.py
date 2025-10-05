@@ -43,28 +43,28 @@ DEFAULT_PROMPT_TEMPLATE = """You are a meticulous HR data extraction bot. Your g
 "Mohammed Imran [MI] - Head of Talent Acquisition & Talent Branding at JioHotstar / Disney Star... Yes, we are hiring across our Engineering, Security, Product, Design & Analytics team at JioHotstar!... Sr Staff Data Scientist [7+ yrs exp]... Staff/Sr Staff Backend Engineer [7+ yrs exp]... Pls apply on career site directly or email your resume: Subject line: 'Role' & 'Your current company' To: mohammed.imranullah@jiostar.com... Note: 1. We are not hiring Freshers..."
 
 **JSON OUTPUT:**
-{
-    "contacts": [{
+{{
+    "contacts": [{{
         "name": "Mohammed Imran",
         "title": "Head of Talent Acquisition & Talent Branding",
         "company": "JioHotstar / Disney Star",
         "email": "mohammed.imranullah@jiostar.com"
-    }],
-    "general_info": {
+    }}],
+    "general_info": {{
         "primary_company": "JioHotstar",
         "hiring_departments": ["Engineering", "Security", "Product", "Design", "Analytics"]
-    },
+    }},
     "open_roles": [
-        {"role_title": "Sr Staff Data Scientist", "experience_required": "7+ yrs"},
-        {"role_title": "Staff/Sr Staff Backend Engineer", "experience_required": "7+ yrs"}
+        {{"role_title": "Sr Staff Data Scientist", "experience_required": "7+ yrs"}},
+        {{"role_title": "Staff/Sr Staff Backend Engineer", "experience_required": "7+ yrs"}}
     ],
-    "application_instructions": {
+    "application_instructions": {{
         "method": "Apply on career site directly or email your resume",
         "recipient_email": "mohammed.imranullah@jiostar.com",
         "email_subject_format": "'Role' & 'Your current company'"
-    },
+    }},
     "important_notes": ["We are not hiring Freshers at the moment"]
-}
+}}
 ---
 
 **YOUR TASK**
@@ -286,14 +286,18 @@ class ContactExtractor:
         """Processes raw text to extract contacts."""
         logger.info(f"Starting text processing with service: {ai_service}")
         llm_results = self.enhance_with_llm(text, ai_service, openai_model, gemini_model)
-        
+        # Use the first LLM result for HR fields (assuming single model for now)
+        hr_data = llm_results[0][1] if llm_results else {}
         structured_contacts = self.structure_final_results(llm_results)
         logger.info(f"Structured {len(structured_contacts)} contact(s).")
-        
         return {
             "raw_text": text,
             "llm_enhanced": llm_results,
-            "structured_contacts": structured_contacts,
+            "contacts": hr_data.get("contacts", []),
+            "general_info": hr_data.get("general_info", {}),
+            "open_roles": hr_data.get("open_roles", []),
+            "application_instructions": hr_data.get("application_instructions", {}),
+            "important_notes": hr_data.get("important_notes", []),
         }
 
     def process_image(self, image: Image.Image, ai_service: str, openai_model: Optional[str], gemini_model: Optional[str]) -> Optional[Dict]:
@@ -428,17 +432,31 @@ def display_results():
     st.subheader(f"Results from: {timestamp}")
 
     with tab1:
-        contacts = results.get("structured_contacts")
+        contacts = results.get("contacts")
         if contacts:
             df = pd.DataFrame(contacts)
             st.dataframe(df)
-            st.download_button("📥 Download CSV", df.to_csv(index=False), f"contacts_{timestamp}.csv")
+            st.download_button("📥 Download Contacts CSV", df.to_csv(index=False), f"contacts_{timestamp}.csv")
         else:
-            st.info("No structured contacts were found.")
-    
+            st.info("No contacts were found.")
+
+        open_roles = results.get("open_roles", [])
+        if open_roles:
+            st.subheader("Open Roles")
+            st.dataframe(pd.DataFrame(open_roles))
+        application_instructions = results.get("application_instructions", {})
+        if application_instructions:
+            st.subheader("Application Instructions")
+            st.json(application_instructions)
+        important_notes = results.get("important_notes", [])
+        if important_notes:
+            st.subheader("Important Notes")
+            for note in important_notes:
+                st.write(f"- {note}")
+
     with tab2:
         st.text_area("Raw input text:", value=results.get("raw_text", ""), height=300, disabled=True)
-        
+
     with tab3:
         if results.get("llm_enhanced"):
             st.json(results["llm_enhanced"])
