@@ -15,6 +15,52 @@ except Exception:
     create_client = None
     SUPABASE_PY_AVAILABLE = False
 
+
+def _log_supabase_error(e, context: str = "Supabase operation"):
+    """Print a helpful, decoded Supabase error message and traceback.
+
+    Supabase client errors sometimes embed a bytes-encoded JSON string in a
+    `details` field (e.g. b'{"message":"Invalid API key"}'). This helper
+    attempts to surface that inner message for easier debugging.
+    """
+    import traceback
+    import json
+    import re
+
+    print(f"{context} failed:")
+    try:
+        # If the exception is already a mapping-like object, pretty-print it.
+        if isinstance(e, dict):
+            try:
+                print(json.dumps(e, indent=2, ensure_ascii=False))
+            except Exception:
+                print(repr(e))
+            details = e.get("details")
+            if details:
+                # details is often a bytes repr: b'{...}'. Try to extract JSON.
+                try:
+                    if isinstance(details, (bytes, bytearray)):
+                        s = details.decode("utf-8", errors="replace")
+                    else:
+                        s = str(details)
+                        m = re.search(r"b'(.*)'", s)
+                        if m:
+                            s = m.group(1)
+                    # Attempt to parse JSON from the inner string
+                    try:
+                        parsed = json.loads(s)
+                        print("Details:", json.dumps(parsed, indent=2, ensure_ascii=False))
+                    except Exception:
+                        print("Details (raw):", s)
+                except Exception:
+                    print("Could not decode details field:", repr(details))
+        else:
+            # Fallback: print representation
+            print(repr(e))
+    except Exception as ex:
+        print("Error while formatting Supabase exception:", repr(ex))
+    traceback.print_exc()
+
 DB_FILE = "contact_data.db"
 DB_PATH = Path(__file__).parent / DB_FILE
 
@@ -371,7 +417,7 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
             return save_contacts_to_supabase(results, extraction_timestamp, source_file)
         except Exception as e:
             # Log the error and continue with local SQLite fallback
-            print(f"Supabase save failed: {e}. Falling back to local SQLite.")
+            _log_supabase_error(e, context="Supabase save")
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -468,7 +514,7 @@ def get_all_contacts_df():
         try:
             return get_all_contacts_df_supabase()
         except Exception as e:
-            print(f"Supabase read failed: {e}. Falling back to local SQLite.")
+            _log_supabase_error(e, context="Supabase read (get_all_contacts_df)")
 
     conn = get_db_connection()
     # Join with extractions to include extracted raw text
@@ -490,7 +536,7 @@ def get_extraction_details(extraction_id: int):
             contacts = sb.table("contacts").select("*").eq("extraction_id", extraction_id).execute()
             return extraction.data[0] if extraction.data else None, pd.DataFrame(contacts.data)
         except Exception as e:
-            print(f"Supabase fetch failed: {e}. Falling back to local SQLite.")
+            _log_supabase_error(e, context="Supabase fetch (get_extraction_details)")
 
     conn = get_db_connection()
     extraction = conn.execute("SELECT * FROM extractions WHERE id = ?", (extraction_id,)).fetchone()
@@ -504,7 +550,7 @@ def get_all_ai_jsons_df():
         try:
             return get_all_ai_jsons_df_supabase()
         except Exception as e:
-            print(f"Supabase read failed: {e}. Falling back to local SQLite.")
+            _log_supabase_error(e, context="Supabase read (get_all_ai_jsons_df)")
 
     conn = get_db_connection()
     df = pd.read_sql_query(
