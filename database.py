@@ -65,9 +65,25 @@ def create_tables():
             confidence TEXT,
             notes TEXT,
             source TEXT,
+            hiring_for_role TEXT,
+            yoe TEXT,
+            tech_stack TEXT,
+            location TEXT,
             FOREIGN KEY (extraction_id) REFERENCES extractions (id)
         )
     ''')
+    # Migration: Add new columns if missing
+    new_contact_columns = [
+        ("hiring_for_role", "TEXT"),
+        ("yoe", "TEXT"),
+        ("tech_stack", "TEXT"),
+        ("location", "TEXT")
+    ]
+    for col, coltype in new_contact_columns:
+        cursor.execute("PRAGMA table_info(contacts)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if col not in columns:
+            cursor.execute(f"ALTER TABLE contacts ADD COLUMN {col} {coltype}")
 
     # Open roles table
     cursor.execute('''
@@ -143,11 +159,15 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
             contact.get("department"),
             contact.get("confidence"),
             contact.get("notes"),
-            contact.get("source")
+            contact.get("source"),
+            contact.get("hiring_for_role", ""),
+            contact.get("yoe", ""),
+            contact.get("tech_stack", ""),
+            contact.get("location", "")
         ))
     cursor.executemany('''
-        INSERT INTO contacts (extraction_id, name, title, company, email, phone, linkedin, department, confidence, notes, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO contacts (extraction_id, name, title, company, email, phone, linkedin, department, confidence, notes, source, hiring_for_role, yoe, tech_stack, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', contacts_to_insert)
 
     # Insert open_roles

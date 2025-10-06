@@ -48,7 +48,11 @@ DEFAULT_PROMPT_TEMPLATE = """You are a meticulous HR data extraction bot. Your g
         "name": "Mohammed Imran",
         "title": "Head of Talent Acquisition & Talent Branding",
         "company": "JioHotstar / Disney Star",
-        "email": "mohammed.imranullah@jiostar.com"
+        "email": "mohammed.imranullah@jiostar.com",
+        "hiring_for_role": "Sr Staff Data Scientist, Staff/Sr Staff Backend Engineer",
+        "yoe": "7+ yrs",
+        "tech_stack": "Engineering, Security, Product, Design, Analytics",
+        "location": ""
     }}],
     "general_info": {{
         "primary_company": "JioHotstar",
@@ -68,6 +72,8 @@ DEFAULT_PROMPT_TEMPLATE = """You are a meticulous HR data extraction bot. Your g
 ---
 
 **YOUR TASK**
+
+For each contact, extract and include these fields if present: name, title, company, email, hiring_for_role (the position(s) they are hiring for), yoe (years of experience required), tech_stack (technologies mentioned), location (job location).
 
 Now, analyze the following text and provide the JSON output in the exact same format as the example. If a section or field is not present, use an empty string "" or an empty list [].
 
