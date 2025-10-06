@@ -432,7 +432,7 @@ def handle_image_input() -> Optional[Image.Image]:
 def display_results():
     """Renders the results tabs in the UI based on session state."""
     st.header("📊 Extraction Results")
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Structured Contacts", "📝 Raw Text", "🤖 AI JSON", "🗃️ Database"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Structured Contacts", "📝 Raw Text", "🤖 AI JSON", "🗃️ Database", "🧠 All AI JSONs"])
 
     results = st.session_state.get(SESS_KEY_CURRENT_RESULTS)
     if not results:
@@ -485,6 +485,23 @@ def display_results():
                 st.info("Database is empty.")
         except Exception as e:
             st.error(f"Could not load from database: {e}")
+    with tab5:
+        st.header("🧠 All AI JSONs in Database")
+        try:
+            from database import get_all_ai_jsons_df
+            ai_jsons_df = get_all_ai_jsons_df()
+            if not ai_jsons_df.empty:
+                st.dataframe(ai_jsons_df[["id", "extraction_id", "extraction_timestamp", "source_file"]])
+                st.download_button("📥 Download All AI JSONs", ai_jsons_df.to_csv(index=False), "all_ai_jsons.csv")
+                st.subheader("View AI JSON for Selected Row")
+                selected = st.number_input("Select AI JSON row id", min_value=int(ai_jsons_df["id"].min()), max_value=int(ai_jsons_df["id"].max()), value=int(ai_jsons_df["id"].min()))
+                row = ai_jsons_df[ai_jsons_df["id"] == selected]
+                if not row.empty:
+                    st.json(row.iloc[0]["ai_json"])
+            else:
+                st.info("No AI JSONs in database.")
+        except Exception as e:
+            st.error(f"Could not load AI JSONs from database: {e}")
 
 # -------------------- Main Application Logic --------------------
 def main():
