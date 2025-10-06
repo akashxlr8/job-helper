@@ -8,7 +8,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import cast, Dict, List, Tuple, Optional, Any
+from dotenv import load_dotenv
 
+load_dotenv()  # Load environment variables from .env file if present
 """Streamlit UI and orchestration for Job Contact Extractor.
 
 This module contains only UI code and orchestration. All AI/LLM logic lives in
