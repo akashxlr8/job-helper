@@ -1,4 +1,3 @@
-
 import sqlite3
 import pandas as pd
 from pathlib import Path
@@ -15,6 +14,15 @@ def get_db_connection():
 def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Table for storing full AI JSON output
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ai_jsons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            extraction_id INTEGER,
+            ai_json TEXT,
+            FOREIGN KEY (extraction_id) REFERENCES extractions (id)
+        )
+    ''')
     # --- Migration: Add new columns to extractions if missing ---
     new_columns = [
         ("primary_company", "TEXT"),
@@ -88,10 +96,12 @@ def create_tables():
     conn.close()
 
 def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: str | None = None):
-    """Save structured contacts to the database."""
+    # Save full AI JSON to ai_jsons table
+    import json as _json
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # Get LLM info
     llm_provider = None
     llm_model = None
@@ -112,6 +122,12 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
     ''', (extraction_timestamp, source_file, results.get("raw_text", ""), llm_provider, llm_model, primary_company, hiring_departments, important_notes))
 
     extraction_id = cursor.lastrowid
+
+    # Insert AI JSON
+    cursor.execute('''
+        INSERT INTO ai_jsons (extraction_id, ai_json)
+        VALUES (?, ?)
+    ''', (extraction_id, _json.dumps(results, ensure_ascii=False)))
 
     # Insert contacts
     contacts_to_insert = []
@@ -169,7 +185,13 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
 def get_all_contacts_df():
     """Retrieve all contacts from the database as a DataFrame."""
     conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM contacts", conn)
+    # Join with extractions to include extracted raw text
+    df = pd.read_sql_query(
+        '''
+        SELECT contacts.*, extractions.raw_text AS extracted_text
+        FROM contacts
+        LEFT JOIN extractions ON contacts.extraction_id = extractions.id
+        ''', conn)
     conn.close()
     return df
 
@@ -180,6 +202,19 @@ def get_extraction_details(extraction_id: int):
     contacts = pd.read_sql_query("SELECT * FROM contacts WHERE extraction_id = ?", conn, params=(extraction_id,))
     conn.close()
     return extraction, contacts
+
+def get_all_ai_jsons_df():
+    """Retrieve all AI JSONs from the database as a DataFrame."""
+    conn = get_db_connection()
+    df = pd.read_sql_query(
+        '''
+        SELECT ai_jsons.*, extractions.extraction_timestamp, extractions.source_file
+        FROM ai_jsons
+        LEFT JOIN extractions ON ai_jsons.extraction_id = extractions.id
+        ORDER BY ai_jsons.id DESC
+        ''', conn)
+    conn.close()
+    return df
 
 # Initialize the database and tables on first import
 create_tables()
