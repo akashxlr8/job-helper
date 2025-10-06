@@ -26,7 +26,8 @@ from loguru import logger
 from PIL import Image
 from streamlit_paste_button import paste_image_button as pbutton
 
-from database import get_all_contacts_df, get_all_ai_jsons_df
+from database import get_all_contacts_df, get_all_ai_jsons_df, supabase_configured
+import os
 
 # --- Logger Setup ---
 LOG_PATH = Path(__file__).parent / "logs" / "job-helper.log"
@@ -60,6 +61,11 @@ def setup_sidebar():
         )
 
         st.markdown("---")
+        # Local override: choose which DB to use when running locally.
+        # If FORCE_SUPABASE=1 is set in the environment (e.g. on Streamlit Cloud), Supabase will be used regardless.
+        st.checkbox("Use Supabase for storage (local override)", key="use_supabase_checkbox")
+        if os.environ.get("FORCE_SUPABASE") == "1":
+            st.info("FORCE_SUPABASE=1 set: Supabase will be used regardless of local checkbox.")
         st.subheader("🧩 Model Selection")
         st.selectbox("OpenAI model", options=["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-5"], key=SESS_KEY_OPENAI_MODEL)
         st.selectbox("Gemini model", options=["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"], key=SESS_KEY_GEMINI_MODEL)
