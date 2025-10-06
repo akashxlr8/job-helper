@@ -20,14 +20,28 @@ def create_tables():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             extraction_id INTEGER,
             ai_json TEXT,
+            created_at TEXT,
+            updated_at TEXT,
             FOREIGN KEY (extraction_id) REFERENCES extractions (id)
         )
     ''')
+    # Migration: Add new columns if missing
+    new_json_columns = [
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT")
+    ]
+    for col, coltype in new_json_columns:
+        cursor.execute("PRAGMA table_info(ai_jsons)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if col not in columns:
+            cursor.execute(f"ALTER TABLE ai_jsons ADD COLUMN {col} {coltype}")
     # --- Migration: Add new columns to extractions if missing ---
     new_columns = [
         ("primary_company", "TEXT"),
         ("hiring_departments", "TEXT"),
-        ("important_notes", "TEXT")
+        ("important_notes", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT")
     ]
     for col, coltype in new_columns:
         cursor.execute(f"PRAGMA table_info(extractions)")
@@ -46,7 +60,9 @@ def create_tables():
             llm_model TEXT,
             primary_company TEXT,
             hiring_departments TEXT,
-            important_notes TEXT
+            important_notes TEXT,
+            created_at TEXT,
+            updated_at TEXT
         )
     ''')
 
@@ -77,7 +93,9 @@ def create_tables():
         ("hiring_for_role", "TEXT"),
         ("yoe", "TEXT"),
         ("tech_stack", "TEXT"),
-        ("location", "TEXT")
+        ("location", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT")
     ]
     for col, coltype in new_contact_columns:
         cursor.execute("PRAGMA table_info(contacts)")
@@ -112,6 +130,8 @@ def create_tables():
     conn.close()
 
 def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: str | None = None):
+    from datetime import datetime
+    now = datetime.now().isoformat(timespec='seconds')
     # Save full AI JSON to ai_jsons table
     import json as _json
 
@@ -133,17 +153,17 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
 
     # Insert extraction record with new fields
     cursor.execute('''
-        INSERT INTO extractions (extraction_timestamp, source_file, raw_text, llm_provider, llm_model, primary_company, hiring_departments, important_notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (extraction_timestamp, source_file, results.get("raw_text", ""), llm_provider, llm_model, primary_company, hiring_departments, important_notes))
+        INSERT INTO extractions (extraction_timestamp, source_file, raw_text, llm_provider, llm_model, primary_company, hiring_departments, important_notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (extraction_timestamp, source_file, results.get("raw_text", ""), llm_provider, llm_model, primary_company, hiring_departments, important_notes, now, now))
 
     extraction_id = cursor.lastrowid
 
     # Insert AI JSON
     cursor.execute('''
-        INSERT INTO ai_jsons (extraction_id, ai_json)
-        VALUES (?, ?)
-    ''', (extraction_id, _json.dumps(results, ensure_ascii=False)))
+        INSERT INTO ai_jsons (extraction_id, ai_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+    ''', (extraction_id, _json.dumps(results, ensure_ascii=False), now, now))
 
     # Insert contacts
     contacts_to_insert = []
@@ -163,11 +183,13 @@ def save_contacts_to_db(results: dict, extraction_timestamp: str, source_file: s
             contact.get("hiring_for_role", ""),
             contact.get("yoe", ""),
             contact.get("tech_stack", ""),
-            contact.get("location", "")
+            contact.get("location", ""),
+            now,
+            now
         ))
     cursor.executemany('''
-        INSERT INTO contacts (extraction_id, name, title, company, email, phone, linkedin, department, confidence, notes, source, hiring_for_role, yoe, tech_stack, location)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO contacts (extraction_id, name, title, company, email, phone, linkedin, department, confidence, notes, source, hiring_for_role, yoe, tech_stack, location, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', contacts_to_insert)
 
     # Insert open_roles
@@ -236,5 +258,32 @@ def get_all_ai_jsons_df():
     conn.close()
     return df
 
+def update_timestamp(table: str, record_id: int):
+    """Update the updated_at column for a given table and record id."""
+    from datetime import datetime
+    now = datetime.now().isoformat(timespec='seconds')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET updated_at = ? WHERE id = ?", (now, record_id))
+    conn.commit()
+    conn.close()
+
+def create_update_triggers():
+    """Create triggers to auto-update updated_at on row update for key tables."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    for table in ["contacts", "extractions", "ai_jsons"]:
+        cursor.execute(f"""
+            CREATE TRIGGER IF NOT EXISTS {table}_updated_at_trigger
+            AFTER UPDATE ON {table}
+            FOR EACH ROW
+            BEGIN
+                UPDATE {table} SET updated_at = datetime('now') WHERE id = NEW.id;
+            END;
+        """)
+    conn.commit()
+    conn.close()
+
 # Initialize the database and tables on first import
 create_tables()
+create_update_triggers()
