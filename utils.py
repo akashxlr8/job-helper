@@ -266,6 +266,41 @@ def _read_streamlit_secrets_toml():
     return None
 
 
+def get_streamlit_secret(key: str) -> str | None:
+    """Read a single key from .streamlit/secrets.toml (very small parser).
+
+    Returns the string value if found, else None.
+    """
+    path = Path(__file__).parent / '.streamlit' / 'secrets.toml'
+    if not path.exists():
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith('#'):
+                    continue
+                if s.startswith(f'{key}') and '=' in s:
+                    _, v = s.split('=', 1)
+                    return v.strip().strip('"').strip("'")
+    except Exception:
+        return None
+    return None
+
+
+def get_openai_api_key() -> str | None:
+    """Return the OpenAI API key from environment or Streamlit secrets (priority).
+
+    Checks in order:
+    1. Environment variable OPENAI_API_KEY
+    2. .streamlit/secrets.toml key `openai_api_key`
+    """
+    v = os.environ.get('OPENAI_API_KEY')
+    if v:
+        return v
+    return get_streamlit_secret('openai_api_key')
+
+
 def get_passlock_raw():
     """Return the stored passlock (raw string) from environment or Streamlit secrets.
 
