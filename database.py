@@ -320,11 +320,6 @@ def create_tables():
         ("created_at", "TEXT"),
         ("updated_at", "TEXT")
     ]
-    for col, coltype in new_columns:
-        cursor.execute(f"PRAGMA table_info(extractions)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if col not in columns:
-            cursor.execute(f"ALTER TABLE extractions ADD COLUMN {col} {coltype}")
     
     # Extraction batch table
     cursor.execute('''
@@ -342,6 +337,13 @@ def create_tables():
             updated_at TEXT
         )
     ''')
+
+    # --- Migration: Add new columns to extractions if missing (run after table exists) ---
+    for col, coltype in new_columns:
+        cursor.execute(f"PRAGMA table_info(extractions)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if col not in columns:
+            cursor.execute(f"ALTER TABLE extractions ADD COLUMN {col} {coltype}")
 
     # Contacts table
     cursor.execute('''
