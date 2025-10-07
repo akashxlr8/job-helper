@@ -34,14 +34,8 @@ A powerful tool that automatically extracts HR and contact person information fr
    ```
 
 2. **Install Python dependencies**
-   Install the core dependencies listed in `requirements.txt`:
    ```bash
    pip install -r requirements.txt
-   ```
-
-   Optional image/ML dependencies (only required for advanced preprocessing or alternative OCR engines):
-   ```bash
-   pip install opencv-python numpy easyocr
    ```
 
 3. **Configure environment variables (optional)**
@@ -252,12 +246,17 @@ Contains complete extraction results:
 
 ```python
 from app import ContactExtractor
+from utils import ImagePreprocessor
 
 # Initialize extractor
 extractor = ContactExtractor()
 
-# Extract with default preprocessing
-results = extractor.process_screenshot(image)
+# Custom preprocessing
+preprocessor = ImagePreprocessor()
+processed_images = preprocessor.preprocess_pipeline(image)
+
+# Extract with specific settings
+results = extractor.process_screenshot(processed_images['final'])
 ```
 
 ### Database Integration
