@@ -37,6 +37,7 @@ logger.add(lambda msg: print(msg, end=""), level="WARNING")
 
 # Import AI helpers
 from llm import ContactExtractor
+from utils import verify_passlock
 
 # Session keys
 SESS_KEY_EXTRACTOR = "extractor"
@@ -159,6 +160,41 @@ def main():
     st.set_page_config(page_title="Job Contact Extractor", page_icon="👔", layout="wide")
     st.title("👔 Job Search Contact Extractor")
     st.markdown("Extract HR/recruiter contact details from text or images using AI.")
+
+    # --- Simple passlock login wall ---
+    pass_lock_required = True
+    if pass_lock_required:
+        # If no passlock is configured, allow entry (dev convenience)
+        from utils import get_passlock_raw
+        stored = get_passlock_raw()
+        if not stored:
+            st.warning("No passlock configured in environment or .streamlit/secrets.toml. Proceeding without login.")
+        else:
+            if 'logged_in' not in st.session_state:
+                st.session_state['logged_in'] = False
+            if not st.session_state['logged_in']:
+                st.header("🔒 Login")
+                candidate = st.text_input("Enter passlock", type="password", key="__passlock_input")
+                if st.button("Unlock"):
+                    if verify_passlock(candidate):
+                        st.session_state['logged_in'] = True
+                        # Try to rerun the app; if the method isn't present, fall back to toggling a key and returning
+                        try:
+                            rerun = getattr(st, 'experimental_rerun', None)
+                            if callable(rerun):
+                                rerun()
+                            else:
+                                # Toggle a transient session key to force a re-render in some Streamlit versions
+                                st.session_state['_login_toggled'] = not st.session_state.get('_login_toggled', False)
+                                return
+                        except Exception:
+                            st.session_state['_login_toggled'] = not st.session_state.get('_login_toggled', False)
+                            return
+                    else:
+                        st.error("Passlock incorrect. Check your .streamlit/secrets.toml or PASSLOCK env var.")
+                # Stop further rendering until logged in
+                if not st.session_state['logged_in']:
+                    return
 
     if SESS_KEY_EXTRACTOR not in st.session_state:
         logger.info("Initializing ContactExtractor for the first time.")
