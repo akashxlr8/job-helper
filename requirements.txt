@@ -17,7 +17,7 @@ requests==2.31.0
 json5==0.9.14
 
 # Image processing
-streamlit-paste-button>=0.3.4
+streamlit-paste-button
 
 # Logging
 loguru
