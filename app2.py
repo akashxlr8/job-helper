@@ -39,6 +39,13 @@ logger.add(lambda msg: print(msg, end=""), level="WARNING")
 # is the first Streamlit command executed. utils helpers can be imported at module level.
 from utils import verify_passlock
 
+# Ensure page config is set before any other Streamlit commands run in imported modules
+try:
+    st.set_page_config(page_title="Job Contact Extractor", page_icon="👔", layout="wide")
+except Exception:
+    # If Streamlit raises (for example, when running in a test environment), ignore and continue
+    pass
+
 # Session keys
 SESS_KEY_EXTRACTOR = "extractor"
 SESS_KEY_OPENAI_API = "openai_api_key"
