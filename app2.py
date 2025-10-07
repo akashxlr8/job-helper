@@ -53,8 +53,12 @@ def setup_sidebar():
     with st.sidebar:
         st.header("⚙️ Configuration")
         st.subheader("API Keys")
-        st.text_input("OpenAI API Key", type="password", key=SESS_KEY_OPENAI_API)
-        st.text_input("Google Gemini API Key", type="password", key=SESS_KEY_GOOGLE_API)
+        # Prefill from environment or .streamlit/secrets.toml if available
+        from utils import get_openai_api_key, get_streamlit_secret
+        pre_openai = st.session_state.get(SESS_KEY_OPENAI_API) or get_openai_api_key() or os.environ.get('OPENAI_API_KEY')
+        pre_google = st.session_state.get(SESS_KEY_GOOGLE_API) or get_streamlit_secret('google_api_key') or os.environ.get('GOOGLE_API_KEY')
+        st.text_input("OpenAI API Key", type="password", key=SESS_KEY_OPENAI_API, value=pre_openai)
+        st.text_input("Google Gemini API Key", type="password", key=SESS_KEY_GOOGLE_API, value=pre_google)
 
         st.session_state[SESS_KEY_EXTRACTOR].set_api_keys(
             st.session_state.get(SESS_KEY_OPENAI_API),
