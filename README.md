@@ -34,8 +34,14 @@ A powerful tool that automatically extracts HR and contact person information fr
    ```
 
 2. **Install Python dependencies**
+   Install the core dependencies listed in `requirements.txt`:
    ```bash
    pip install -r requirements.txt
+   ```
+
+   Optional image/ML dependencies (only required for advanced preprocessing or alternative OCR engines):
+   ```bash
+   pip install opencv-python numpy easyocr
    ```
 
 3. **Configure environment variables (optional)**
@@ -118,6 +124,36 @@ TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 TESSERACT_CMD=/usr/local/bin/tesseract
 ```
 
+### Passlock (Login wall)
+
+This project includes a simple passlock-based login wall used by the Streamlit app. The app looks for a `passlock` in either:
+
+- `.streamlit/secrets.toml` as the key `passlock`
+- the environment variable `PASSLOCK`
+
+You can store either a plaintext passlock (not recommended) or a hashed value using SHA-256. The app supports a stored format of `sha256$<hex>` which is safer than plaintext.
+
+Generate a hashed passlock locally and paste it into `.streamlit/secrets.toml`:
+
+```bash
+# Generate sha256$... using Python (replace MYSECRET with your passlock)
+/c/Python312/python.exe -c "from utils import make_sha256_hash; print(make_sha256_hash('MYSECRET'))"
+```
+
+Then add the output to `.streamlit/secrets.toml`:
+
+```toml
+passlock = "sha256$3a7bd3..."
+```
+
+Or set the env var (temporary session):
+
+```bash
+export PASSLOCK="my-plain-passlock"
+```
+
+When the app starts and a passlock is present, users will be prompted to enter it to access the UI. Do not commit real secrets to your repository.
+
 ## 📊 Output Formats
 
 ### CSV Export
@@ -160,10 +196,7 @@ Contains complete extraction results:
 - **EasyOCR**: Deep learning-based OCR for better accuracy on complex images
 
 ### Image Processing
-- Automatic contrast enhancement
-- Noise reduction
-- Image deskewing
-- Optimal resizing for OCR
+- Automatic contrast enhancement, noise reduction, and resizing (internal preprocessing)
 
 ### Contact Pattern Recognition
 - Email address validation
@@ -219,17 +252,12 @@ Contains complete extraction results:
 
 ```python
 from app import ContactExtractor
-from utils import ImagePreprocessor
 
 # Initialize extractor
 extractor = ContactExtractor()
 
-# Custom preprocessing
-preprocessor = ImagePreprocessor()
-processed_images = preprocessor.preprocess_pipeline(image)
-
-# Extract with specific settings
-results = extractor.process_screenshot(processed_images['final'])
+# Extract with default preprocessing
+results = extractor.process_screenshot(image)
 ```
 
 ### Database Integration
