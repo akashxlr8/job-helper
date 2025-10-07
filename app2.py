@@ -35,8 +35,8 @@ logger.remove()
 logger.add(LOG_PATH, rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
 logger.add(lambda msg: print(msg, end=""), level="WARNING")
 
-# Import AI helpers
-from llm import ContactExtractor
+# Import AI helpers will be done inside main() to ensure Streamlit's set_page_config
+# is the first Streamlit command executed. utils helpers can be imported at module level.
 from utils import verify_passlock
 
 # Session keys
@@ -161,7 +161,10 @@ def display_results():
 
 def main():
     logger.debug("Starting main application loop.")
+    # Ensure set_page_config is the first Streamlit command called in the script.
     st.set_page_config(page_title="Job Contact Extractor", page_icon="👔", layout="wide")
+    # Import ContactExtractor here to avoid earlier Streamlit side-effects in llm.py
+    from llm import ContactExtractor
     st.title("👔 Job Search Contact Extractor")
     st.markdown("Extract HR/recruiter contact details from text or images using AI.")
 
