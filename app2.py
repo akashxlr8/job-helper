@@ -138,8 +138,14 @@ def display_results():
 
     with tab4:
         st.header("🗃️ All Contacts in Database")
+        refresh_contacts = st.button("🔄 Refresh Database")
+        use_supabase = st.session_state.get("use_supabase_checkbox") or os.environ.get("FORCE_SUPABASE") == "1"
         try:
-            all_contacts_df = get_all_contacts_df()
+            if use_supabase:
+                from database import get_all_contacts_df_supabase
+                all_contacts_df = get_all_contacts_df_supabase()
+            else:
+                all_contacts_df = get_all_contacts_df()
             if not all_contacts_df.empty:
                 st.dataframe(all_contacts_df)
                 st.download_button("📥 Download All as CSV", all_contacts_df.to_csv(index=False), "all_contacts.csv")
@@ -150,8 +156,14 @@ def display_results():
 
     with tab5:
         st.header("🧠 All AI JSONs in Database")
+        refresh_jsons = st.button("🔄 Refresh AI JSONs")
+        use_supabase = st.session_state.get("use_supabase_checkbox") or os.environ.get("FORCE_SUPABASE") == "1"
         try:
-            ai_jsons_df = get_all_ai_jsons_df()
+            if use_supabase:
+                from database import get_all_ai_jsons_df_supabase
+                ai_jsons_df = get_all_ai_jsons_df_supabase()
+            else:
+                ai_jsons_df = get_all_ai_jsons_df()
             if not ai_jsons_df.empty:
                 st.dataframe(ai_jsons_df[["id", "extraction_id", "extraction_timestamp", "source_file"]])
                 st.download_button("📥 Download All AI JSONs", ai_jsons_df.to_csv(index=False), "all_ai_jsons.csv")
