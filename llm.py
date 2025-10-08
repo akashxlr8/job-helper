@@ -81,7 +81,7 @@ Now, analyze the following text and provide the JSON output in the exact same fo
 TEXT TO ANALYZE:
 {text}
 """
-VISION_PROMPT = "Extract all text. try to maintain the formatting as much as possible. Do not add any commentary or verbosity. Always include all the important text like names, emails, companies, roles, experience requirements, and application instructions. Extract the text as accurately as possible, without adding or omitting any details."
+VISION_PROMPT = "Extract all text. try to maintain the formatting as much as possible. Do not add any commentary or verbosity. Always include all the important text like names, emails, companies, roles, experience requirements, and application instructions. Extract the text as accurately as possible, without adding or omitting any details. Try to keep the poster details as intact as possible, if present."
 
 # Model Configurations
 OPENAI_TEXT_MODELS = {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-5"}
