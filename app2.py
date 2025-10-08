@@ -33,7 +33,7 @@ import os
 LOG_PATH = Path(__file__).parent / "logs" / "job-helper.log"
 logger.remove()
 logger.add(LOG_PATH, rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
-logger.add(lambda msg: print(msg, end=""), level="WARNING")
+logger.add(lambda msg: print(msg, end=""), level="INFO")
 
 # Import AI helpers will be done inside main() to ensure Streamlit's set_page_config
 # is the first Streamlit command executed. utils helpers can be imported at module level.
