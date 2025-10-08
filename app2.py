@@ -111,30 +111,31 @@ def display_results():
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Structured Contacts", "📝 Raw Text", "🤖 AI JSON", "🗃️ Database", "🧠 All AI JSONs"]) 
 
     results = st.session_state.get(SESS_KEY_CURRENT_RESULTS)
-    if not results:
-        st.info("👆 Provide input and click 'Extract Contacts' to see results here.")
-        return
-
     timestamp = st.session_state.get(SESS_KEY_TIMESTAMP, "N/A")
-    st.subheader(f"Results from: {timestamp}")
-
-    with tab1:
-        contacts = results.get("contacts")
-        if contacts:
-            df = pd.DataFrame(contacts)
-            st.dataframe(df)
-            st.download_button("📥 Download Contacts CSV", df.to_csv(index=False), f"contacts_{timestamp}.csv")
-        else:
-            st.info("No contacts were found.")
-
-    with tab2:
-        st.text_area("Raw input text:", value=results.get("raw_text", ""), height=300, disabled=True)
-
-    with tab3:
-        if results.get("llm_enhanced"):
-            st.json(results["llm_enhanced"])
-        else:
-            st.info("No AI results to display.")
+    if results:
+        st.subheader(f"Results from: {timestamp}")
+        with tab1:
+            contacts = results.get("contacts")
+            if contacts:
+                df = pd.DataFrame(contacts)
+                st.dataframe(df)
+                st.download_button("📥 Download Contacts CSV", df.to_csv(index=False), f"contacts_{timestamp}.csv")
+            else:
+                st.info("No contacts were found.")
+        with tab2:
+            st.text_area("Raw input text:", value=results.get("raw_text", ""), height=300, disabled=True)
+        with tab3:
+            if results.get("llm_enhanced"):
+                st.json(results["llm_enhanced"])
+            else:
+                st.info("No AI results to display.")
+    else:
+        with tab1:
+            st.info("👆 Provide input and click 'Extract Contacts' to see results here.")
+        with tab2:
+            st.info("👆 Provide input and click 'Extract Contacts' to see results here.")
+        with tab3:
+            st.info("👆 Provide input and click 'Extract Contacts' to see results here.")
 
     with tab4:
         st.header("🗃️ All Contacts in Database")
