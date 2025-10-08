@@ -168,8 +168,7 @@ def display_results():
 
 def main():
     logger.debug("Starting main application loop.")
-    # Ensure set_page_config is the first Streamlit command called in the script.
-    st.set_page_config(page_title="Job Contact Extractor", page_icon="👔", layout="wide")
+    # ...existing code...
     # Import ContactExtractor here to avoid earlier Streamlit side-effects in llm.py
     from llm import ContactExtractor
     st.title("👔 Job Search Contact Extractor")
