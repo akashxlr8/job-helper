@@ -20,4 +20,4 @@ streamlit-paste-button==0.1.2
 
 # Logging
 loguru
-supabase-py
+supabase
