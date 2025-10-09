@@ -141,11 +141,20 @@ def display_results():
         st.header("🗃️ All Contacts in Database")
         refresh_contacts = st.button("🔄 Refresh Database")
         use_supabase = st.session_state.get("use_supabase_checkbox") or os.environ.get("FORCE_SUPABASE") == "1"
+        
+        # Debug info to verify Supabase configuration
+        st.caption(f"Using Supabase: {use_supabase} | FORCE_SUPABASE={os.environ.get('FORCE_SUPABASE')}")
+        
         try:
             if use_supabase:
-                from database import get_all_contacts_df_supabase
+                from database import get_all_contacts_df_supabase, supabase_configured
+                if not supabase_configured():
+                    st.warning("Supabase is not properly configured. Check SUPABASE_URL and SUPABASE_KEY environment variables.")
+                else:
+                    st.info("Fetching from Supabase...")
                 all_contacts_df = get_all_contacts_df_supabase()
             else:
+                st.info("Using local SQLite database")
                 all_contacts_df = get_all_contacts_df()
             if not all_contacts_df.empty:
                 st.dataframe(all_contacts_df)
@@ -154,16 +163,26 @@ def display_results():
                 st.info("Database is empty.")
         except Exception as e:
             st.error(f"Could not load from database: {e}")
+            logger.error(f"Database fetch error: {e}", exc_info=True)
 
     with tab5:
         st.header("🧠 All AI JSONs in Database")
         refresh_jsons = st.button("🔄 Refresh AI JSONs")
         use_supabase = st.session_state.get("use_supabase_checkbox") or os.environ.get("FORCE_SUPABASE") == "1"
+        
+        # Debug info to verify Supabase configuration
+        st.caption(f"Using Supabase: {use_supabase} | FORCE_SUPABASE={os.environ.get('FORCE_SUPABASE')}")
+        
         try:
             if use_supabase:
-                from database import get_all_ai_jsons_df_supabase
+                from database import get_all_ai_jsons_df_supabase, supabase_configured
+                if not supabase_configured():
+                    st.warning("Supabase is not properly configured. Check SUPABASE_URL and SUPABASE_KEY environment variables.")
+                else:
+                    st.info("Fetching from Supabase...")
                 ai_jsons_df = get_all_ai_jsons_df_supabase()
             else:
+                st.info("Using local SQLite database")
                 ai_jsons_df = get_all_ai_jsons_df()
             if not ai_jsons_df.empty:
                 st.dataframe(ai_jsons_df[["id", "extraction_id", "extraction_timestamp", "source_file"]])
@@ -177,6 +196,7 @@ def display_results():
                 st.info("No AI JSONs in database.")
         except Exception as e:
             st.error(f"Could not load AI JSONs from database: {e}")
+            logger.error(f"AI JSONs fetch error: {e}", exc_info=True)
 
 
 def main():
